@@ -8,6 +8,8 @@
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="viewer.css">
   <link rel="stylesheet" href="about.css">
+  <link rel="stylesheet" href="updates.css">
+  <link rel="stylesheet" href="history.css">
 </head>
 <body>
   <div class="app-shell">
@@ -17,9 +19,10 @@
         <div><strong>Иллюстрации</strong><small>для EPUB</small></div>
       </div>
       <div class="sidebar-heading"><span>Библиотека</span><span id="book-count">0</span></div>
+      <button id="history-button" class="book-entry history-button" type="button"><span class="book-icon" aria-hidden="true">◷</span><span class="book-label"><strong>История</strong><small id="history-navigation-count">Сохранённых результатов пока нет</small></span></button>
       <nav id="book-list" class="book-list" aria-label="Книги"></nav>
       <div class="sidebar-note"><div class="note-dot"></div><p>Книги обрабатываются на вашем компьютере. Ссылки на картинки загружаются только при просмотре и сохранении.</p></div>
-      <button id="about-button" class="about-link" type="button">О приложении <span>1.0.0</span></button>
+      <button id="about-button" class="about-link" type="button">О приложении <span>…</span></button>
     </aside>
 
     <main class="main-content">
@@ -27,6 +30,13 @@
         <div class="topbar-location">Моя библиотека <span>/</span> <strong id="location-name">Все иллюстрации</strong></div>
         <button id="add-button" class="button button-primary" type="button"><span class="button-plus" aria-hidden="true">+</span> Добавить EPUB</button>
       </header>
+      <aside id="update-notice" class="update-notice" hidden aria-live="polite">
+        <div class="update-notice-icon" aria-hidden="true">↥</div>
+        <div class="update-notice-copy"><strong id="update-notice-title">Доступно обновление</strong><span id="update-notice-text"></span></div>
+        <button id="update-notice-open" class="text-button" type="button">Что нового</button>
+        <button id="update-notice-install" class="button button-primary" type="button">Обновить</button>
+        <button id="update-notice-dismiss" class="icon-button" type="button" aria-label="Скрыть уведомление об этой версии" title="Скрыть уведомление об этой версии">×</button>
+      </aside>
 
       <section id="empty-state" class="empty-state">
         <div class="empty-art" aria-hidden="true"><div class="paper paper-back"></div><div class="paper paper-mid"></div><div class="paper paper-front"><div class="paper-sun"></div><div class="paper-hill"></div></div></div>
@@ -54,10 +64,15 @@
         <div class="selection-row"><span id="result-label"></span><div><button id="select-visible" class="text-button" type="button">Выбрать видимые</button><button id="clear-selection" class="text-button" type="button">Снять выбор</button></div></div>
         <div id="gallery" class="gallery" aria-live="polite"></div>
       </div>
+      <section id="history-workspace" class="workspace history-workspace hidden" aria-labelledby="history-title">
+        <div class="workspace-heading"><div><div class="eyebrow">Ваша работа</div><h1 id="history-title">История сохранений</h1><p>Готовые результаты и книги, с которыми вы работали</p></div><div class="heading-count"><strong id="history-total">0</strong><span>сохранений</span></div></div>
+        <div id="history-list" class="history-list"></div>
+      </section>
 
       <footer id="export-bar" class="export-bar hidden">
         <div class="export-summary"><span class="selected-indicator" aria-hidden="true"></span><div><strong id="selected-count">0 выбрано</strong><span id="selected-hint">Отметьте картинки для сохранения</span></div></div>
         <div class="destination"><span>Папка</span><strong id="destination-path" title=""></strong><button id="change-folder" class="text-button" type="button">Изменить</button></div>
+        <label class="export-layout"><span>Структура для каждой книги</span><select id="export-layout" aria-label="Структура сохранения"><option value="chapters">По папкам-главам</option><option value="flat">Все в одной папке</option><option value="both">Оба варианта</option></select></label>
         <div class="export-actions"><button id="save-folder" class="button button-dark" type="button">В папку</button><button id="save-zip" class="button button-outline" type="button">В ZIP</button></div>
       </footer>
     </main>
@@ -85,14 +100,23 @@
       <button id="close-about" class="icon-button about-close" type="button" aria-label="Закрыть">×</button>
       <img src="assets/icon.png" alt="" width="72" height="72">
       <h2 id="about-title">Иллюстрации EPUB</h2>
-      <p id="about-version" class="about-version">Версия 1.0.0</p>
+      <p id="about-version" class="about-version">Версия…</p>
       <p class="about-description">Из книги — в вашу коллекцию.<br>Иллюстрации по главам, в папку или ZIP.</p>
       <div class="about-credit"><span>Разработчик</span><button class="text-button" data-open-link="developer" type="button">dollar</button><span>Команда</span><button class="text-button" data-open-link="team" type="button">Дом Некроманта</button></div>
+      <section class="update-settings" aria-label="Обновления">
+        <div class="update-settings-heading"><strong>Обновления</strong><button id="check-updates" class="text-button" type="button">Проверить</button></div>
+        <p id="update-status" role="status">Загрузка настроек…</p>
+        <progress id="update-progress" value="0" max="100" hidden aria-label="Загрузка обновления"></progress>
+        <label class="update-preference"><input id="automatic-updates" type="checkbox">Проверять автоматически</label>
+        <div class="about-update-actions"><button id="about-update-open" class="text-button" type="button" hidden>Что нового</button><button id="about-update-install" class="button button-primary" type="button" hidden>Обновить</button></div>
+      </section>
       <button class="button button-primary" data-open-link="repository" type="button">Официальный репозиторий</button>
       <p class="about-license">Сделано для вашей библиотеки. Лицензия MIT.</p>
     </div>
   </div>
   <script src="viewer-math.js"></script>
+  <script src="history-ui.js"></script>
   <script src="renderer.js"></script>
+  <script src="updates-ui.js"></script>
 </body>
 </html>

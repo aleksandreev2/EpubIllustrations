@@ -1,17 +1,72 @@
-const { app, BrowserWindow, dialog, ipcMain } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, shell, Notification } = require('electron');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { randomUUID } = require('node:crypto');
+const { randomUUID, createHash } = require('node:crypto');
 const { scanEpub } = require('./epub');
 const { buildExport, makeZip, imageFormat } = require('./export');
+const { initializeUpdates } = require('./update-runtime');
+const { createLibraryStore, LAYOUTS } = require('./library');
+if (process.env.EPUB_ILLUSTRATIONS_USER_DATA && path.isAbsolute(process.env.EPUB_ILLUSTRATIONS_USER_DATA)) app.setPath('userData', process.env.EPUB_ILLUSTRATIONS_USER_DATA);
 
 const books = new Map();
 const remoteCache = new Map();
 let window;
 let outputDirectory;
+let updateRuntime;
+let importing = 0;
+let exporting = false;
+let library;
+let libraryWarning = '';
 
 function publicBook(book) {
-  return { id: book.id, title: book.title, filename: book.filename, items: book.items };
+  return { id: book.id, title: book.title, filename: book.filename, items: book.items, missing: Boolean(book.missing), missingReason: book.missingReason || '', count: book.missing ? book.count || 0 : book.items.length };
+}
+async function readBook(filePath, id = randomUUID()) {
+  const stat = await fs.stat(filePath);
+  const data = await fs.readFile(filePath);
+  return { id, filePath, fingerprint: { size: stat.size, mtimeMs: stat.mtimeMs, sha256: createHash('sha256').update(data).digest('hex') }, ...scanEpub(data, path.basename(filePath)) };
+}
+function bookRecord(book) { return { id: book.id, filePath: book.filePath, filename: book.filename, title: book.title, count: book.items.length, fingerprint: book.fingerprint }; }
+function sameSource(a, b) { return Boolean(a && b && (a.sha256 && b.sha256 ? a.sha256 === b.sha256 : a.size === b.size && a.mtimeMs === b.mtimeMs)); }
+async function rememberImportedBook(book, previous) {
+  const available = new Set(book.items.map(item => `${book.id}:${item.id}`));
+  const defaults = book.items.filter(item => !item.isCover).map(item => `${book.id}:${item.id}`);
+  const preserve = Boolean(previous && sameSource(previous.fingerprint, book.fingerprint));
+  let warning = previous && !preserve ? 'Содержимое EPUB изменилось: отмечены все иллюстрации глав новой версии.' : '';
+  try { await library.recordBook(bookRecord(book)); } catch (error) { warning += ` Метаданные книги не сохранены: ${error.message}`; }
+  let chosen;
+  try {
+    chosen = await library.mergeSelection({ bookId: book.id, itemKeys: [...available], defaultKeys: defaults, preserve,
+      fallback: [...books.values()].flatMap(item => item.items.filter(image => !image.isCover).map(image => `${item.id}:${image.id}`)) });
+  } catch (error) {
+    warning += ` Выбор не сохранён: ${error.message}`;
+    chosen = (library.snapshot().selected || defaults).filter(key => available.has(key));
+  }
+  return { chosen, warning };
+}
+async function restoreLibrary() {
+  const saved = await library.load(); libraryWarning = saved.warning;
+  let selected = saved.selected;
+  for (const record of saved.books) {
+    try {
+      const book = await readBook(record.filePath, record.id); books.set(book.id, book);
+      if (JSON.stringify(record.fingerprint) !== JSON.stringify(book.fingerprint)) {
+        try { await library.recordBook(bookRecord(book)); } catch (error) { libraryWarning = error.message; }
+        if (selected && !sameSource(record.fingerprint, book.fingerprint)) {
+          selected = [...selected.filter(key => !key.startsWith(book.id + ':')), ...book.items.filter(item => !item.isCover).map(item => `${book.id}:${item.id}`)];
+          if (!libraryWarning) libraryWarning = 'Содержимое одного из EPUB изменилось: его иллюстрации глав отмечены заново.';
+        }
+      }
+    } catch (error) {
+      books.set(record.id, { ...record, items: [], missing: true, missingReason: error.code === 'ENOENT' ? 'Исходный EPUB перемещён или удалён.' : 'Не удалось прочитать исходный EPUB.' });
+    }
+  }
+  if (selected) {
+    const valid = new Set([...books.values()].flatMap(book => book.items.map(item => `${book.id}:${item.id}`)));
+    const missing = new Set([...books.values()].filter(book => book.missing).map(book => book.id));
+    selected = selected.filter(key => valid.has(key) || missing.has(key.split(':')[0]));
+    try { await library.setSelection(selected); } catch (error) { libraryWarning = error.message; }
+  }
 }
 
 function settingsPath() { return path.join(app.getPath('userData'), 'settings.json'); }
@@ -72,20 +127,28 @@ async function downloadRemote(initialUrl) {
 }
 
 async function addBooks(paths) {
+  if (updateRuntime?.isInstalling()) throw Error('Дождитесь завершения обновления приложения.');
+  importing++;
+  try { return await scanBooks(paths); } finally { importing--; }
+}
+async function scanBooks(paths) {
   const added = [];
   const errors = [];
+  const selectionByBook = {};
   for (const filePath of [...new Set(paths)].slice(0, 30)) {
     try {
       if (path.extname(filePath).toLowerCase() !== '.epub') throw Error('нужен файл EPUB');
       const existing = [...books.values()].find(book => book.filePath.toLowerCase() === filePath.toLowerCase());
-      if (existing) { added.push(publicBook(existing)); continue; }
-      const data = await fs.readFile(filePath);
-      const book = { id: randomUUID(), filePath, ...scanEpub(data, path.basename(filePath)) };
+      if (existing && !existing.missing) { added.push(publicBook(existing)); continue; }
+      const book = await readBook(filePath, existing?.id);
       books.set(book.id, book);
+      const remembered = await rememberImportedBook(book, existing);
+      selectionByBook[book.id] = remembered.chosen;
+      if (remembered.warning) errors.push(remembered.warning);
       added.push(publicBook(book));
     } catch (error) { errors.push(`${path.basename(filePath)}: ${error.message}`); }
   }
-  return { added, errors };
+  return { added, errors, selectionByBook };
 }
 
 async function writeUnique(target, data) {
@@ -117,12 +180,63 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   await loadSettings();
+  library = createLibraryStore(path.join(app.getPath('userData'), 'library.json'));
+  await restoreLibrary();
+  if (process.platform === 'win32') app.setAppUserModelId('local.novelpia.illustrations');
+  updateRuntime = initializeUpdates({ app, ipcMain, dialog, shell, Notification, getWindow: () => window, isBusy: () => exporting || importing > 0 });
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+let flushingQuit = false, savedQuit = false;
+app.on('before-quit', event => {
+  if (!library || savedQuit) return;
+  event.preventDefault();
+  if (flushingQuit) return;
+  flushingQuit = true;
+  library.flush().catch(error => console.error('Library save:', error.message)).finally(() => { savedQuit = true; app.quit(); });
+});
 
-ipcMain.handle('state', () => ({ books: [...books.values()].map(publicBook), outputDirectory, version: app.getVersion() }));
+ipcMain.handle('state', () => {
+  const saved = library.snapshot();
+  return { books: [...books.values()].map(publicBook), outputDirectory, version: app.getVersion(), history: saved.history, selected: saved.selected, exportLayout: saved.layout, libraryWarning };
+});
+ipcMain.handle('library:selection', async (_, keys, clearUnavailable) => {
+  if (!Array.isArray(keys)) throw Error('Некорректный выбор иллюстраций.');
+  const valid = new Set([...books.values()].flatMap(book => book.items.map(item => `${book.id}:${item.id}`)));
+  const missing = new Set([...books.values()].filter(book => book.missing).map(book => book.id));
+  const preserved = (library.snapshot().selected || []).filter(key => missing.has(key.split(':')[0]));
+  const allowed = new Set([...valid, ...preserved]);
+  await library.setSelection([...keys.filter(key => allowed.has(key)), ...(clearUnavailable === true ? [] : preserved)]);
+});
+ipcMain.handle('library:layout', (_, layout) => library.setLayout(layout));
+ipcMain.handle('history:restore', async (_, id) => {
+  const record = library.snapshot().history.find(item => item.id === id);
+  if (!record) throw Error('Запись истории не найдена.');
+  return addBooks(record.sources.map(source => source.filePath));
+});
+ipcMain.handle('history:open', async (_, id) => {
+  const record = library.snapshot().history.find(item => item.id === id);
+  if (!record) throw Error('Запись истории не найдена.');
+  try { const stat = await fs.stat(record.destination); if (stat.isDirectory()) await shell.openPath(record.destination); else shell.showItemInFolder(record.destination); }
+  catch { throw Error('Результат перемещён или удалён. Путь сохранён в истории.'); }
+});
+ipcMain.handle('library:relink', async (_, id) => {
+  if (updateRuntime?.isInstalling()) throw Error('Дождитесь завершения обновления.');
+  const previous = books.get(id);
+  if (!previous) throw Error('Книга не найдена.');
+  const choice = await dialog.showOpenDialog(window, { title: 'Найти исходный EPUB', properties: ['openFile'], filters: [{ name: 'EPUB', extensions: ['epub'] }] });
+  if (choice.canceled || !choice.filePaths[0]) return { added: [], errors: [] };
+  const filePath = choice.filePaths[0];
+  if ([...books.values()].some(book => book.id !== id && book.filePath.toLowerCase() === filePath.toLowerCase())) throw Error('Этот EPUB уже есть в библиотеке.');
+  if (updateRuntime?.isInstalling()) throw Error('Дождитесь завершения обновления.');
+  importing++;
+  try {
+    const book = await readBook(filePath, id); books.set(id, book);
+    const remembered = await rememberImportedBook(book, previous);
+    return { added: [publicBook(book)], errors: remembered.warning ? [remembered.warning] : [], replaced: true, selectionByBook: { [id]: remembered.chosen } };
+  } finally { importing--; }
+});
 ipcMain.handle('open-link', async (_, name) => {
   const links = {
     repository: 'https://github.com/aleksandreev2/EpubIllustrations',
@@ -137,7 +251,10 @@ ipcMain.handle('choose-books', async () => {
   return choice.canceled ? { added: [], errors: [] } : addBooks(choice.filePaths);
 });
 ipcMain.handle('add-books', (_, paths) => addBooks(Array.isArray(paths) ? paths.filter(p => typeof p === 'string') : []));
-ipcMain.handle('remove-book', (_, id) => books.delete(id));
+ipcMain.handle('remove-book', async (_, id) => {
+  books.delete(id);
+  try { await library.removeBook(id); return {}; } catch (error) { return { warning: error.message }; }
+});
 ipcMain.handle('choose-directory', async () => {
   const choice = await dialog.showOpenDialog(window, { title: 'Папка для иллюстраций', defaultPath: outputDirectory, properties: ['openDirectory', 'createDirectory'] });
   if (!choice.canceled && choice.filePaths[0]) {
@@ -157,16 +274,25 @@ ipcMain.handle('preview', async (_, bookId, itemId) => {
   if (!format) throw Error('не удалось прочитать изображение');
   return `data:${format.mime};base64,${Buffer.from(response.data).toString('base64')}`;
 });
-ipcMain.handle('export', async (_, mode, selectedKeys) => {
+ipcMain.handle('export', async (_, mode, selectedKeys, layout) => {
+  if (exporting || updateRuntime?.isInstalling()) throw Error('Дождитесь завершения текущего сохранения или обновления.');
+  exporting = true;
+  try { return await exportSelection(mode, selectedKeys, layout); } finally { exporting = false; }
+});
+async function exportSelection(mode, selectedKeys, layout = library.snapshot().layout) {
   if (!['folder', 'zip'].includes(mode) || !Array.isArray(selectedKeys)) throw Error('неверные параметры экспорта');
   if (!selectedKeys.length) throw Error('выберите хотя бы одну иллюстрацию');
+  if (!LAYOUTS.has(layout)) throw Error('Неизвестная структура экспорта.');
+  const exportBooks = [...books.values()];
+  const selected = new Set(selectedKeys);
+  const sources = exportBooks.filter(book => book.items.some(item => selected.has(`${book.id}:${item.id}`))).map(book => ({ id: book.id, title: book.title, filePath: book.filePath }));
   let destination = outputDirectory;
   if (mode === 'zip') {
     const choice = await dialog.showSaveDialog(window, { title: 'Сохранить ZIP', defaultPath: path.join(outputDirectory, 'Иллюстрации EPUB.zip'), filters: [{ name: 'ZIP архив', extensions: ['zip'] }] });
     if (choice.canceled || !choice.filePath) return { canceled: true };
     destination = choice.filePath;
   }
-  const { files, errors } = await buildExport([...books.values()], selectedKeys, downloadRemote);
+  const { files, errors, imageCount } = await buildExport(exportBooks, selectedKeys, downloadRemote, layout);
   if (!files.size) return { count: 0, errors, destination: null };
   if (mode === 'zip') {
     await fs.writeFile(destination, makeZip(files));
@@ -178,8 +304,11 @@ ipcMain.handle('export', async (_, mode, selectedKeys) => {
       await writeUnique(fullPath, data);
     }
   }
-  return { count: files.size, errors, destination };
-});
+  let historyWarning = '';
+  try { await library.addExport({ format: mode, layout, destination, sources, imageCount, fileCount: files.size, errors }); }
+  catch (error) { historyWarning = `История не сохранена: ${error.message}`; }
+  return { count: imageCount, fileCount: files.size, errors, destination, history: library.snapshot().history, historyWarning };
+}
 ipcMain.handle('open-folder', async (_, folder) => {
   const { shell } = require('electron');
   if (folder && typeof folder === 'string') {

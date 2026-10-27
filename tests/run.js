@@ -2,3 +2,7 @@ require('./epub.test');
 require('./export.test');
 require('./viewer.test');
 require('./capture.test');
+require('./updates.test');
+require('./update-runtime.test');
+require('./library.test');
+require('./recovery.test');

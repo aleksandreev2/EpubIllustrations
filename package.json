@@ -1,6 +1,6 @@
 {
   "name": "novelpia-illustrations",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Иллюстрации из EPUB по главам — в папку или ZIP, без пережатия",
   "author": { "name": "dollar · Дом Некроманта", "url": "https://ranobelib.me/ru/user/726236" },
@@ -16,7 +16,9 @@
     "demo": "node scripts/create-demo.cjs",
     "screenshots": "node scripts/capture-screenshots.cjs",
     "dist": "electron-builder --win nsis portable",
-    "checksums": "node scripts/checksums.cjs"
+    "checksums": "node scripts/checksums.cjs",
+    "updates:smoke": "node scripts/updates-smoke.cjs",
+    "updates:download-smoke": "node scripts/updates-smoke.cjs --download"
   },
   "dependencies": {
     "fflate": "0.8.3"

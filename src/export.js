@@ -1,7 +1,7 @@
 const { zipSync } = require('fflate');
 
 function safePart(value) {
-  let result = String(value || '').replace(/[<>:"/\\|?*\x00-\x1f]/g, '').replace(/[. ]+$/g, '').replace(/\s+/g, ' ').trim().slice(0, 72);
+  let result = String(value || '').replace(/[<>:"/\\|?*\x00-\x1f]/g, '').replace(/[. ]+$/g, '').replace(/\s+/g, ' ').trim().slice(0, 72).replace(/[. ]+$/g, '');
   if (!result) result = 'Без названия';
   if (/^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(result)) result += '_';
   return result;
@@ -22,18 +22,20 @@ function imageFormat(input, contentType = '', name = '', allowExtensionFallback 
   return null;
 }
 
-async function buildExport(books, selectedKeys, loadRemote) {
+async function buildExport(books, selectedKeys, loadRemote, layout = 'chapters') {
+  if (!['chapters', 'flat', 'both'].includes(layout)) throw Error('Неизвестная структура экспорта.');
   const selected = new Set(selectedKeys);
   const files = new Map();
   const errors = [];
-  const bookNames = new Map();
+  let imageCount = 0;
+  const bookNames = new Set();
   for (const book of books) {
     const candidates = book.items.filter(item => selected.has(`${book.id}:${item.id}`));
     if (!candidates.length) continue;
     const base = safePart(book.title);
-    const count = (bookNames.get(base) || 0) + 1;
-    bookNames.set(base, count);
-    const folder = count === 1 ? base : `${base} (${count})`;
+    let folder = base, suffix = 2;
+    while (bookNames.has(folder.toLowerCase())) folder = `${base} (${suffix++})`;
+    bookNames.add(folder.toLowerCase());
     const indices = new Map();
     for (const item of candidates) {
       try {
@@ -48,14 +50,21 @@ async function buildExport(books, selectedKeys, loadRemote) {
           : '9999 Вне глав';
         const sequence = (indices.get(chapterFolder) || 0) + 1;
         indices.set(chapterFolder, sequence);
-        const relativePath = `${folder}/${chapterFolder}/${String(sequence).padStart(3, '0')}.${format.ext}`;
-        files.set(relativePath, new Uint8Array(response.data));
+        const number = String(sequence).padStart(3, '0');
+        const content = new Uint8Array(response.data);
+        if (layout === 'chapters') files.set(`${folder}/${chapterFolder}/${number}.${format.ext}`, content);
+        if (layout === 'flat') files.set(`${folder}/${chapterFolder} - ${number}.${format.ext}`, content);
+        if (layout === 'both') {
+          files.set(`${folder}/По главам/${chapterFolder}/${number}.${format.ext}`, content);
+          files.set(`${folder}/Все иллюстрации/${chapterFolder} - ${number}.${format.ext}`, content);
+        }
+        imageCount++;
       } catch (error) {
         errors.push(`${book.title} — ${item.chapter}: ${error.message}`);
       }
     }
   }
-  return { files, errors };
+  return { files, errors, imageCount };
 }
 
 function makeZip(files) {

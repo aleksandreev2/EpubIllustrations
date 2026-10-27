@@ -1,6 +1,9 @@
 const api = window.illustrations;
 const $ = id => document.getElementById(id);
-const state = { books: [], selected: new Set(), activeBook: 'all', filter: 'all', search: '', outputDirectory: '', busy: false };
+const state = { books: [], history: [], selected: new Set(), unavailableSelected: new Set(), activeBook: 'all', view: 'gallery', filter: 'all', search: '', outputDirectory: '', exportLayout: 'chapters', busy: false, ready: false };
+let savedSelection = '';
+let selectionWarningShown = false;
+let clearSelectionRevision = 0;
 const previews = new Map();
 let observer;
 let modalItem = null;
@@ -57,41 +60,45 @@ function renderBooks() {
   const list = $('book-list');
   list.replaceChildren();
   $('book-count').textContent = state.books.length;
+  $('history-button').classList.toggle('active', state.view === 'history');
+  $('history-navigation-count').textContent = formatCount(state.history.length, 'сохранение', 'сохранения', 'сохранений');
   if (!state.books.length) return;
-  const all = element('button', `book-entry${state.activeBook === 'all' ? ' active' : ''}`);
+  const all = element('button', `book-entry${state.view !== 'history' && state.activeBook === 'all' ? ' active' : ''}`);
   all.type = 'button';
   all.append(element('span', 'book-icon', '▦'));
   const allText = element('span', 'book-label');
   allText.append(element('strong', '', 'Все книги'), element('small', '', formatCount(state.books.reduce((n, b) => n + b.items.length, 0), 'изображение', 'изображения', 'изображений')));
   all.append(allText);
-  all.addEventListener('click', () => { state.activeBook = 'all'; render(); });
+  all.addEventListener('click', () => { state.view = 'gallery'; state.activeBook = 'all'; render(); });
   list.append(all);
   for (const book of state.books) {
-    const entry = element('div', `book-entry${state.activeBook === book.id ? ' active' : ''}`);
+    const entry = element('div', `book-entry${state.view !== 'history' && state.activeBook === book.id ? ' active' : ''}`);
     entry.setAttribute('role', 'button');
     entry.setAttribute('tabindex', '0');
     entry.title = book.title;
     entry.append(element('span', 'book-icon', '▤'));
     const label = element('span', 'book-label');
-    label.append(element('strong', '', book.title), element('small', '', formatCount(book.items.length, 'изображение', 'изображения', 'изображений')));
+    label.append(element('strong', '', book.title), element('small', '', book.missing ? 'Файл недоступен' : formatCount(book.count ?? book.items.length, 'изображение', 'изображения', 'изображений')));
     entry.append(label);
     const remove = element('button', 'remove-book', '×');
     remove.type = 'button';
-    remove.title = 'Убрать книгу из списка';
+    remove.title = 'Убрать книгу из библиотеки';
     remove.setAttribute('aria-label', `Убрать ${book.title}`);
     const removeBook = async event => {
       event.stopPropagation();
-      await api.removeBook(book.id);
+      const result = await api.removeBook(book.id);
       state.books = state.books.filter(b => b.id !== book.id);
       for (const item of book.items) state.selected.delete(key(book, item));
+      for (const selected of state.unavailableSelected) if (selected.startsWith(book.id + ':')) state.unavailableSelected.delete(selected);
       if (state.activeBook === book.id) state.activeBook = 'all';
       render();
+      if (result?.warning) showToast(result.warning);
     };
     remove.addEventListener('click', removeBook);
     remove.addEventListener('keydown', event => event.stopPropagation());
     entry.append(remove);
-    entry.addEventListener('click', () => { state.activeBook = book.id; render(); });
-    entry.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); state.activeBook = book.id; render(); } });
+    entry.addEventListener('click', () => { state.view = 'gallery'; state.activeBook = book.id; render(); });
+    entry.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); state.view = 'gallery'; state.activeBook = book.id; render(); } });
     list.append(entry);
   }
 }
@@ -153,8 +160,17 @@ function renderGallery() {
   gallery.replaceChildren();
   const visible = visibleItems();
   $('visible-count').textContent = visible.length;
+  $('visible-count').nextElementSibling.textContent = formatCount(visible.length, 'изображение', 'изображения', 'изображений').replace(/^\d+\s/, '');
   $('result-label').textContent = formatCount(visible.length, 'найдено', 'найдено', 'найдено');
   if (!visible.length) {
+    const current = state.books.find(book => book.id === state.activeBook);
+    if (current?.missing) {
+      const missing = element('div', 'missing-book-message');
+      const locate = element('button', 'button button-primary', 'Найти EPUB'); locate.type = 'button';
+      locate.addEventListener('click', () => addBooks(api.relinkBook(current.id)));
+      missing.append(element('strong', '', 'Исходный файл недоступен'), element('p', '', current.missingReason + ' Найдите его, чтобы продолжить. История сохранений остаётся в библиотеке.'), locate);
+      gallery.append(missing); return;
+    }
     gallery.append(element('div', 'no-results', state.search ? 'По вашему запросу ничего не найдено' : 'Здесь пока нет изображений'));
     return;
   }
@@ -175,20 +191,31 @@ function renderGallery() {
 function updateExportBar() {
   const count = state.selected.size;
   $('selected-count').textContent = formatCount(count, 'выбрано', 'выбрано', 'выбрано');
-  $('selected-hint').textContent = count ? 'Готово к сохранению' : 'Отметьте картинки для сохранения';
+  $('selected-hint').textContent = state.unavailableSelected.size ? `Отметки без исходного EPUB: ${state.unavailableSelected.size}` : count ? 'Готово к сохранению' : 'Отметьте картинки для сохранения';
   $('save-folder').disabled = !count || state.busy;
   $('save-zip').disabled = !count || state.busy;
   $('destination-path').textContent = state.outputDirectory;
   $('destination-path').title = state.outputDirectory;
+  if (state.ready) {
+    const keys = [...state.selected, ...state.unavailableSelected];
+    const selection = JSON.stringify(keys.sort());
+    if (selection !== savedSelection) {
+      savedSelection = selection;
+      api.saveSelection(keys).catch(error => { if (!selectionWarningShown) { selectionWarningShown = true; showToast(`Не удалось сохранить выбор: ${error.message}`); } });
+    }
+  }
 }
 
 function render() {
   const hasBooks = state.books.length > 0;
-  $('empty-state').classList.toggle('hidden', hasBooks);
-  $('workspace').classList.toggle('hidden', !hasBooks);
-  $('export-bar').classList.toggle('hidden', !hasBooks);
+  const history = state.view === 'history';
+  $('empty-state').classList.toggle('hidden', hasBooks || history);
+  $('workspace').classList.toggle('hidden', !hasBooks || history);
+  $('history-workspace').classList.toggle('hidden', !history);
+  $('export-bar').classList.toggle('hidden', !hasBooks || history);
   renderBooks();
-  if (hasBooks) {
+  if (history) { $('location-name').textContent = 'История'; renderHistory(); }
+  else if (hasBooks) {
     const current = state.books.find(b => b.id === state.activeBook);
     $('view-title').textContent = current?.title || 'Все иллюстрации';
     $('location-name').textContent = current?.title || 'Все иллюстрации';
@@ -200,17 +227,22 @@ function render() {
 }
 
 async function addBooks(resultPromise) {
+  const clearRevision = clearSelectionRevision;
   try {
     const result = await resultPromise;
-    const hadBooks = state.books.length > 0;
-    const known = new Set(state.books.map(book => book.id));
     for (const book of result.added) {
-      if (known.has(book.id)) continue;
-      state.books.push(book);
-      for (const item of book.items) if (!item.isCover) state.selected.add(key(book, item));
+      const index = state.books.findIndex(existing => existing.id === book.id);
+      const reset = index < 0 || result.replaced || state.books[index].missing && !book.missing;
+      if (index < 0) state.books.push(book); else state.books[index] = book;
+      if (reset) {
+        for (const selected of state.selected) if (selected.startsWith(book.id + ':')) state.selected.delete(selected);
+        for (const selected of state.unavailableSelected) if (selected.startsWith(book.id + ':')) state.unavailableSelected.delete(selected);
+        const chosen = clearRevision !== clearSelectionRevision ? [] : result.selectionByBook?.[book.id] || book.items.filter(item => !item.isCover).map(item => key(book, item));
+        for (const selected of chosen) state.selected.add(selected);
+      }
     }
-    if (!hadBooks && result.added.length === 1) state.activeBook = result.added[0].id;
-    else if (!hadBooks) state.activeBook = 'all';
+    if (result.added.length) { state.view = 'gallery'; state.activeBook = result.added.length === 1 ? result.added[0].id : 'all'; }
+    if (clearRevision !== clearSelectionRevision) savedSelection = '';
     render();
     if (result.errors.length) showToast(result.errors.slice(0, 2).join('\n'));
     else if (result.added.length) showToast(formatCount(result.added.length, 'книга добавлена', 'книги добавлены', 'книг добавлено'));
@@ -337,20 +369,29 @@ async function exportSelected(mode) {
   const normalText = button.textContent;
   button.textContent = 'Сохраняем…';
   try {
-    const result = await api.export(mode, [...state.selected]);
+    const result = await api.export(mode, [...state.selected], state.exportLayout);
     if (result.canceled) return;
     if (!result.count) {
       showToast(`Не удалось сохранить изображения. ${result.errors[0] || 'Проверьте файлы и ссылки.'}`);
       return;
     }
     let message = `${formatCount(result.count, 'изображение сохранено', 'изображения сохранены', 'изображений сохранено')}`;
+    if (result.fileCount && result.fileCount !== result.count) message += ` (${formatCount(result.fileCount, 'файл', 'файла', 'файлов')})`;
     if (result.errors.length) message += `. Ошибок: ${result.errors.length}. ${result.errors[0]}`;
+    if (result.historyWarning) message += `. ${result.historyWarning}`;
+    if (result.history) { state.history = result.history; renderBooks(); if (state.view === 'history') renderHistory(); }
     showToast(message, { label: 'Показать результат', run: () => api.openFolder(result.destination) });
   } catch (error) { showToast(`Не удалось сохранить: ${error.message}`); }
   finally { state.busy = false; button.textContent = normalText; updateExportBar(); }
 }
 
 function bindEvents() {
+  $('history-button').addEventListener('click', () => { state.view = 'history'; render(); });
+  $('export-layout').addEventListener('change', async event => {
+    const previous = state.exportLayout; state.exportLayout = event.target.value;
+    try { await api.setExportLayout(state.exportLayout); }
+    catch (error) { state.exportLayout = previous; event.target.value = previous; showToast(error.message); }
+  });
   $('about-button').addEventListener('click', () => $('about-modal').classList.remove('hidden'));
   $('close-about').addEventListener('click', () => $('about-modal').classList.add('hidden'));
   document.querySelector('[data-close-about]').addEventListener('click', () => $('about-modal').classList.add('hidden'));
@@ -360,7 +401,11 @@ function bindEvents() {
   $('search-input').addEventListener('input', event => { state.search = event.target.value; renderGallery(); });
   document.querySelectorAll('.filter').forEach(button => button.addEventListener('click', () => { state.filter = button.dataset.filter; render(); }));
   $('select-visible').addEventListener('click', () => { for (const { book, item } of visibleItems()) state.selected.add(key(book, item)); render(); });
-  $('clear-selection').addEventListener('click', () => { state.selected.clear(); render(); });
+  $('clear-selection').addEventListener('click', async () => {
+    clearSelectionRevision++;
+    state.selected.clear(); state.unavailableSelected.clear(); savedSelection = '[]'; render();
+    try { await api.saveSelection([], true); } catch (error) { showToast(error.message); }
+  });
   $('change-folder').addEventListener('click', async () => { try { state.outputDirectory = await api.chooseDirectory(); updateExportBar(); } catch (error) { showToast(error.message); } });
   $('save-folder').addEventListener('click', () => exportSelected('folder'));
   $('save-zip').addEventListener('click', () => exportSelected('zip'));
@@ -427,4 +472,13 @@ function bindEvents() {
 }
 
 bindEvents();
-api.state().then(initial => { state.books = initial.books; state.outputDirectory = initial.outputDirectory; $('about-version').textContent = `Версия ${initial.version}`; $('about-button').querySelector('span').textContent = initial.version; render(); }).catch(error => showToast(`Ошибка запуска: ${error.message}`));
+api.state().then(initial => {
+  state.books = initial.books; state.history = initial.history || []; state.outputDirectory = initial.outputDirectory; state.exportLayout = initial.exportLayout || 'chapters';
+  const available = new Set(state.books.flatMap(book => book.items.map(item => key(book, item))));
+  const selected = initial.selected || state.books.flatMap(book => book.items.filter(item => !item.isCover).map(item => key(book, item)));
+  state.selected = new Set(selected.filter(key => available.has(key))); state.unavailableSelected = new Set(selected.filter(key => !available.has(key)));
+  savedSelection = JSON.stringify([...state.selected, ...state.unavailableSelected].sort()); state.ready = true;
+  $('export-layout').value = state.exportLayout;
+  $('about-version').textContent = `Версия ${initial.version}`; $('about-button').querySelector('span').textContent = initial.version; render();
+  if (initial.libraryWarning) showToast(initial.libraryWarning);
+}).catch(error => showToast(`Ошибка запуска: ${error.message}`));

@@ -44,3 +44,32 @@ test('does not mistake an HTML login page for a remote image based on its URL', 
   assert.equal(imageFormat(html, 'image/png', 'picture.png'), null);
   assert.equal(imageFormat(html, '', 'picture.png'), null);
 });
+
+test('flat layout keeps all illustrations of each book in one folder with chapter names', async () => {
+  const book = { id: 'b', title: 'Книга', entries: { '1.jpg': Buffer.from('one'), '2.jpg': Buffer.from('two') }, items: [
+    { id: '1', chapter: 'Начало', chapterIndex: 1, sourceType: 'embedded', archivePath: '1.jpg', originalName: '1.jpg' },
+    { id: '2', chapter: 'Финал', chapterIndex: 2, sourceType: 'embedded', archivePath: '2.jpg', originalName: '2.jpg' }
+  ] };
+  const result = await buildExport([book], ['b:1', 'b:2'], null, 'flat');
+  assert.deepEqual([...result.files.keys()], ['Книга/0001 Начало - 001.jpg', 'Книга/0002 Финал - 001.jpg']);
+  assert.equal(result.imageCount, 2);
+});
+test('both layouts share one downloaded original and create two complete structures in ZIP', async () => {
+  const png = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10, 0]); let calls = 0;
+  const book = { id: 'b', title: 'Книга', entries: {}, items: [{ id: '1', chapter: 'Начало', chapterIndex: 1, sourceType: 'remote', url: 'https://images.novelpia.com/one.file', originalName: 'one.file' }] };
+  const result = await buildExport([book], ['b:1'], async () => { calls++; return { data: png }; }, 'both');
+  assert.equal(calls, 1); assert.equal(result.imageCount, 1);
+  const zipped = unzipSync(makeZip(result.files));
+  assert.deepEqual(Object.keys(zipped), ['Книга/По главам/0001 Начало/001.png', 'Книга/Все иллюстрации/0001 Начало - 001.png']);
+  for (const value of Object.values(zipped)) assert.deepEqual(value, png);
+  await assert.rejects(buildExport([book], ['b:1'], null, 'unknown'), /структур/);
+});
+test('duplicate titles cannot collide with natural suffixes or Windows letter casing', async () => {
+  const books = ['Книга', 'Книга', 'Книга (2)', 'книга'].map((title, i) => ({ id: String(i), title, entries: { 'a.jpg': Buffer.from(String(i)) }, items: [{ id: 'a', chapter: 'Глава', chapterIndex: 1, sourceType: 'embedded', archivePath: 'a.jpg', originalName: 'a.jpg' }] }));
+  for (const layout of ['flat', 'both']) {
+    const result = await buildExport(books, books.map(book => `${book.id}:a`), null, layout);
+    assert.equal(result.files.size, layout === 'both' ? 8 : 4);
+    assert.equal(new Set([...result.files.keys()].map(name => name.toLowerCase())).size, result.files.size);
+    assert.deepEqual(new Set([...result.files.values()].map(value => Buffer.from(value).toString())), new Set(['0','1','2','3']));
+  }
+});

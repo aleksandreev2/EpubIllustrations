@@ -1,93 +1,71 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
-const net = require('node:net');
-const { randomUUID } = require('node:crypto');
-const { matchesTarget } = require('./capture-target.cjs');
+const assert = require('node:assert/strict');
+const { startDesktopSession } = require('./desktop-session.cjs');
 const root = path.resolve(__dirname, '..');
-const output = path.join(root, 'docs', 'images');
-const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-
 async function main() {
   const demos = require('./create-demo.cjs');
-  await fs.mkdir(output, { recursive: true });
-  const listener = net.createServer();
-  await new Promise((resolve, reject) => { listener.once('error', reject); listener.listen(0, '127.0.0.1', resolve); });
-  const port = listener.address().port;
-  await new Promise(resolve => listener.close(resolve));
-  const sessionArgument = `--epub-capture-session=${randomUUID()}`;
-  const executable = process.env.EPUB_CAPTURE_EXECUTABLE || require('electron');
-  const args = [...(process.env.EPUB_CAPTURE_EXECUTABLE ? [] : [root]), `--remote-debugging-port=${port}`, '--remote-debugging-address=127.0.0.1', '--enable-automation', sessionArgument];
-  const child = spawn(executable, args, { cwd: root, windowsHide: true, env: { ...process.env, ILLUSTRATION_EXPORT_DIR: 'D:\\Иллюстрации' }, stdio: ['ignore', 'ignore', 'pipe'] });
-  let startupLog = '';
-  let startupError;
-  child.on('error', error => { startupError = error; });
-  child.stderr.on('data', data => { startupLog = (startupLog + data.toString()).slice(-4000); });
-  let socket;
+  const output = path.join(root, 'docs', 'images'); await fs.mkdir(output, { recursive: true });
+  const data = await fs.mkdtemp(path.join(root, 'qa-capture-'));
+  const inputs = path.join(data, 'inputs'); await fs.mkdir(inputs);
+  const files = [];
+  for (const demo of demos) { const file = path.join(inputs, path.basename(demo)); await fs.copyFile(demo, file); files.push(file); }
+  const options = { userData: data, outputDirectory: path.join(data, 'output') };
+  let session;
   try {
-    let target;
-    for (let attempt = 0; attempt < 120; attempt++) {
-      if (startupError) throw startupError;
-      if (child.exitCode !== null) throw Error(`Electron stopped: ${startupLog}`);
-      try { target = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find(item => matchesTarget(item, root, Boolean(process.env.EPUB_CAPTURE_EXECUTABLE))); } catch {}
-      if (target) break;
-      await delay(250);
-    }
-    if (!target) throw Error(`Electron debugger unavailable: ${startupLog}`);
-    socket = new WebSocket(target.webSocketDebuggerUrl);
-    await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject; });
-    let sequence = 0;
-    function send(method, params = {}) {
-      return new Promise((resolve, reject) => {
-        const id = ++sequence;
-        const timer = setTimeout(() => { socket.removeEventListener('message', handler); reject(Error(`Timed out: ${method}`)); }, 20000);
-        function handler(event) {
-          const message = JSON.parse(event.data);
-          if (message.id !== id) return;
-          clearTimeout(timer);
-          socket.removeEventListener('message', handler);
-          message.error ? reject(Error(message.error.message)) : resolve(message.result);
-        }
-        socket.addEventListener('message', handler);
-        socket.send(JSON.stringify({ id, method, params }));
-      });
-    }
-    async function evaluate(expression) {
-      const result = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
-      if (result.exceptionDetails) throw Error(result.exceptionDetails.text + ': ' + result.exceptionDetails.exception?.description);
-      return result.result?.value;
-    }
-    async function capture(filename) {
-      await evaluate('document.fonts.ready.then(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))))');
-      const result = await send('Page.captureScreenshot', { format: 'png' });
-      await fs.writeFile(path.join(output, filename), Buffer.from(result.data, 'base64'));
-      console.log(filename);
-    }
-    const commandLine = await send('Browser.getBrowserCommandLine');
-    if (!commandLine.arguments?.includes(sessionArgument)) throw Error('Debugger does not belong to this screenshot session');
-    await send('Emulation.setDeviceMetricsOverride', { width: 1360, height: 900, deviceScaleFactor: 1, mobile: false });
-    let ready = false;
-    for (let attempt = 0; attempt < 40; attempt++) {
-      try { if (await evaluate('Boolean(window.illustrations && typeof state !== "undefined" && state.outputDirectory)')) { ready = true; break; } } catch {}
-      await delay(100);
-    }
-    if (!ready) throw Error('Application did not become ready; no screenshots captured');
+    session = await startDesktopSession(options);
+    const capture = async name => { await session.capture(path.join(output, name)); console.log(name); };
     await capture('welcome.png');
-    await evaluate(`addBooks(window.illustrations.addBooks(${JSON.stringify(demos)}))`);
-    await evaluate('state.outputDirectory="D:\\\\Иллюстрации";updateExportBar();document.getElementById("toast").classList.add("hidden");Promise.all([...document.querySelectorAll(".image-card")].map(card=>card.loadPreview()))');
+    await session.evaluate(`addBooks(window.illustrations.addBooks(${JSON.stringify(files)}))`);
+    await session.evaluate('state.outputDirectory="D:\\\\Иллюстрации";updateExportBar();document.getElementById("toast").classList.add("hidden");Promise.all([...document.querySelectorAll(".image-card")].map(card=>card.loadPreview()))');
     await capture('gallery.png');
-    await evaluate('openModal(state.books[0],state.books[0].items[2])');
-    await capture('viewer.png');
-    const viewerChecks = await evaluate('(()=>{const initial=viewer.scale;document.getElementById("zoom-in").click();const zoomWorks=viewer.scale>initial;document.getElementById("rotate-right").click();const rotateWorks=viewer.rotation===90;document.getElementById("actual-size").click();return {zoomWorks,rotateWorks,actualWorks:viewer.scale===1}})()');
-    if (!Object.values(viewerChecks).every(Boolean)) throw Error(`Viewer verification failed: ${JSON.stringify(viewerChecks)}`);
-    await evaluate('closeModal();document.getElementById("about-button").click()');
-    await capture('about.png');
-    const credits = await evaluate('document.getElementById("about-modal").innerText');
-    if (!credits.includes('dollar') || !credits.includes('Дом Некроманта')) throw Error('Developer credits missing');
-    console.log('Viewer and developer credits verified.');
+    await session.evaluate('openModal(state.books[0],state.books[0].items[2])'); await capture('viewer.png');
+    const viewer = await session.evaluate('(()=>{const initial=viewer.scale;document.getElementById("zoom-in").click();const zoomWorks=viewer.scale>initial;document.getElementById("rotate-right").click();const rotateWorks=viewer.rotation===90;document.getElementById("actual-size").click();return {zoomWorks,rotateWorks,actualWorks:viewer.scale===1}})()');
+    assert.ok(Object.values(viewer).every(Boolean));
+    await session.evaluate('closeModal();document.getElementById("about-button").click();checkAppUpdates(true)'); await capture('about.png');
+    const credits = await session.evaluate('document.getElementById("about-modal").innerText');
+    assert.ok(credits.includes('dollar') && credits.includes('Дом Некроманта'));
+    const updates = await session.evaluate('(()=>{const original=updateSnapshot;renderUpdateState({...original,status:"available",enabled:true,notify:true,release:{version:"9.9.9",asset:{name:"demo.exe"}}},true);const banner=!document.getElementById("update-notice").hidden;renderUpdateProgress({percent:42});const progress=document.getElementById("update-progress").value===42;renderUpdateState({...original,status:"unavailable",message:"Проверка сети: тест"});const offline=document.getElementById("update-status").textContent.includes("Проверка сети: тест");renderUpdateState(original);document.getElementById("update-progress").hidden=true;document.getElementById("about-modal").classList.add("hidden");return {banner,progress,offline}})()');
+    assert.ok(Object.values(updates).every(Boolean));
+    await session.evaluate('state.selected=new Set([...state.books[0].items.filter(item=>!item.isCover).slice(0,2).map(item=>key(state.books[0],item)),...state.books[1].items.filter(item=>!item.isCover).slice(0,1).map(item=>key(state.books[1],item))]);render()');
+    for (const layout of ['chapters', 'flat', 'both']) {
+      await session.evaluate(`(async()=>{state.exportLayout=${JSON.stringify(layout)};document.getElementById('export-layout').value=state.exportLayout;await api.setExportLayout(state.exportLayout);await exportSelected('folder')})()`);
+    }
+    const result = await session.evaluate('({history:state.history.length,counts:state.history.map(record=>[record.imageCount,record.fileCount]),selected:state.selected.size})');
+    assert.equal(result.history, 3); assert.deepEqual(result.counts, [[3,6],[3,3],[3,3]]); assert.equal(result.selected, 3);
+    assert.equal((await fs.readdir(options.outputDirectory, { recursive: true })).filter(file => file.endsWith('.svg')).length, 12);
+    await session.evaluate('state.history=state.history.map(record=>({...record,destination:"D:\\\\Иллюстрации"}));state.view="history";document.getElementById("toast").classList.add("hidden");render()');
+    await capture('history.png');
+    await session.close();
+    const stored = JSON.parse(await fs.readFile(path.join(data, 'library.json'), 'utf8'));
+    assert.equal(stored.books.length, 2); assert.equal(stored.history.length, 3); assert.equal(stored.selected.length, 3); assert.equal(stored.layout, 'both');
+    const moved = files[1] + '.moved'; await fs.rename(files[1], moved);
+    session = await startDesktopSession(options);
+    const restored = await session.evaluate('({books:state.books.length,history:state.history.length,selected:state.selected.size,unavailable:(state.unavailableSelected||new Set()).size,layout:state.exportLayout,missing:state.books.filter(book=>book.missing).length})');
+    assert.deepEqual(restored, { books: 2, history: 3, selected: 2, unavailable: 1, layout: 'both', missing: 1 });
+    const kept = await session.evaluate('(async()=>{document.querySelector(".card-check").click();document.querySelector(".card-check").click();const saved=await api.state();return saved.selected.filter(key=>saved.books.find(book=>book.missing&&key.startsWith(book.id+":"))).length})()');
+    assert.equal(kept, 1);
+    await fs.rename(moved, files[1]);
+    await fs.utimes(files[1], new Date(), new Date());
+    await session.evaluate(`addBooks(api.addBooks([${JSON.stringify(files[1])}]))`);
+    assert.equal(await session.evaluate('state.books.filter(book=>book.missing).length'), 0);
+    assert.equal(await session.evaluate('state.selected.size'), 3, 'Recovering a missing source must preserve its selected subset');
+    await session.close(); await fs.rename(files[1], moved);
+    session = await startDesktopSession(options);
+    await fs.rename(moved, files[1]);
+    await session.evaluate(`(async()=>{const result=await api.addBooks([${JSON.stringify(files[1])}]);let deliver;const pending=new Promise(resolve=>{deliver=resolve});const completion=addBooks(pending);document.getElementById('clear-selection').click();deliver(result);await completion})()`);
+    assert.equal(await session.evaluate('state.selected.size'), 0, 'An intentionally empty subset must stay empty after recovery');
+    assert.equal((await session.evaluate('api.state()')).selected.length, 0, 'Clear-all must also clear unavailable selections');
+    const newFile = path.join(inputs, 'new-demo.epub'); await fs.copyFile(files[0], newFile);
+    await session.evaluate(`(async()=>{let deliver;const pending=new Promise(resolve=>{deliver=resolve});const completion=addBooks(pending);document.getElementById('clear-selection').click();const result=await api.addBooks([${JSON.stringify(newFile)}]);deliver(result);await completion})()`);
+    assert.equal(await session.evaluate('state.selected.size'), 0);
+    assert.equal((await session.evaluate('api.state()')).selected.length, 0, 'Clear-all during new import must correct backend default marks');
+    console.log('Viewer, updates, all export layouts, persistent history/selection, restart and missing-source recovery verified.');
   } finally {
-    socket?.close();
-    child.kill();
+    await session?.close();
+    const resolved = path.resolve(data);
+    if (!resolved.startsWith(root + path.sep) || !path.basename(resolved).startsWith('qa-capture-')) throw Error('Unsafe capture cleanup path');
+    await fs.rm(resolved, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });
