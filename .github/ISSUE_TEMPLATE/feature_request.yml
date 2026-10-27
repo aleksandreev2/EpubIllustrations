@@ -1,0 +1,18 @@
+name: Предложение
+description: Улучшение приложения
+title: "[Идея] "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: task
+    attributes:
+      label: Какую задачу хочется решить?
+      description: Опишите ваш сценарий и что мешает выполнить его сейчас.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Как должен выглядеть результат?
+    validations:
+      required: true

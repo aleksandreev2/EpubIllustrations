@@ -1,0 +1,8 @@
+.about-link{margin:18px 10px 0;padding:0;background:none;border:0;display:flex;align-items:center;justify-content:space-between;text-align:left;color:#5d6b85;font-size:12px;font-weight:600}
+.about-link:hover{color:#6854d8}.about-link span{font-size:10px;color:#929db0;font-weight:400}
+.about-panel{position:relative;z-index:1;width:min(460px,100%);background:#fff;border-radius:20px;padding:35px 36px 25px;text-align:center;box-shadow:0 30px 70px #0004}
+.about-close{position:absolute;top:16px;right:18px}.about-panel>img{display:block;margin:0 auto 17px}
+.about-panel h2{font:700 27px Bahnschrift,"Segoe UI",sans-serif;letter-spacing:-.025em;margin:0}
+.about-version{font-size:12px;color:#8d98ab;margin:7px 0 20px}.about-description{font-size:14px;color:#69768e;line-height:1.6}
+.about-credit{display:grid;grid-template-columns:1fr 1fr;text-align:left;align-items:center;gap:10px 24px;margin:25px 0;padding:18px 22px;border:1px solid #e4e8f0;border-radius:12px;background:#f8f9fc}
+.about-credit>span{font-size:12px;color:#8b96a9}.about-credit>button{justify-self:start;font-size:13px;padding:0}.about-panel>.button{min-height:42px;width:100%}.about-license{font-size:10px;color:#9ba4b5;margin:18px 0 0}

@@ -1,0 +1,13 @@
+node_modules/
+release/
+dist/
+.npm-cache/
+qa-*
+*.tgz
+*.log
+.capture-userdata/
+docs/superpowers/
+preview.png
+examples/generated/
+docs/design.md
+docs/plan.md

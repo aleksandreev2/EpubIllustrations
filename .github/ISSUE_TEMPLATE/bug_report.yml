@@ -1,0 +1,32 @@
+name: Ошибка
+description: Что-то работает не так
+title: "[Ошибка] "
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Версия приложения и Windows
+      placeholder: "Например: 1.0.0, Windows 11 x64"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Как повторить
+      description: Перечислите действия, после которых возникает ошибка.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Ожидаемый результат
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Что произошло
+      description: Добавьте текст ошибки или скриншот. Для проблем с EPUB достаточно небольшой демонстрационной книги без личных данных.
+    validations:
+      required: true

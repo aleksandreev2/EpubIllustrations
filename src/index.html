@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'">
+  <title>Иллюстрации EPUB</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="viewer.css">
+  <link rel="stylesheet" href="about.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+        <div><strong>Иллюстрации</strong><small>для EPUB</small></div>
+      </div>
+      <div class="sidebar-heading"><span>Библиотека</span><span id="book-count">0</span></div>
+      <nav id="book-list" class="book-list" aria-label="Книги"></nav>
+      <div class="sidebar-note"><div class="note-dot"></div><p>Книги обрабатываются на вашем компьютере. Ссылки на картинки загружаются только при просмотре и сохранении.</p></div>
+      <button id="about-button" class="about-link" type="button">О приложении <span>1.0.0</span></button>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <div class="topbar-location">Моя библиотека <span>/</span> <strong id="location-name">Все иллюстрации</strong></div>
+        <button id="add-button" class="button button-primary" type="button"><span class="button-plus" aria-hidden="true">+</span> Добавить EPUB</button>
+      </header>
+
+      <section id="empty-state" class="empty-state">
+        <div class="empty-art" aria-hidden="true"><div class="paper paper-back"></div><div class="paper paper-mid"></div><div class="paper paper-front"><div class="paper-sun"></div><div class="paper-hill"></div></div></div>
+        <h1>Иллюстрации из ваших книг</h1>
+        <p>Добавьте EPUB, чтобы увидеть все картинки по главам. Потом сохраните выбранное в папку или ZIP.</p>
+        <button id="empty-add" class="button button-primary button-large" type="button">Выбрать EPUB</button>
+        <span class="drop-hint">или перетащите файлы сюда</span>
+      </section>
+
+      <div id="workspace" class="workspace hidden">
+        <div class="workspace-heading">
+          <div><div class="eyebrow">Галерея книги</div><h1 id="view-title">Все иллюстрации</h1><p id="view-subtitle"></p></div>
+          <div class="heading-count"><strong id="visible-count">0</strong><span>изображений</span></div>
+        </div>
+        <div class="controls">
+          <label class="search"><span aria-hidden="true">⌕</span><input id="search-input" type="search" placeholder="Найти главу или книгу" autocomplete="off"></label>
+          <div class="filter-buttons" role="group" aria-label="Фильтр изображений">
+            <button class="filter active" data-filter="all" type="button">Все</button>
+            <button class="filter" data-filter="selected" type="button">Выбранные</button>
+            <button class="filter" data-filter="embedded" type="button">В EPUB</button>
+            <button class="filter" data-filter="remote" type="button">По ссылке</button>
+            <button class="filter" data-filter="cover" type="button">Обложки</button>
+          </div>
+        </div>
+        <div class="selection-row"><span id="result-label"></span><div><button id="select-visible" class="text-button" type="button">Выбрать видимые</button><button id="clear-selection" class="text-button" type="button">Снять выбор</button></div></div>
+        <div id="gallery" class="gallery" aria-live="polite"></div>
+      </div>
+
+      <footer id="export-bar" class="export-bar hidden">
+        <div class="export-summary"><span class="selected-indicator" aria-hidden="true"></span><div><strong id="selected-count">0 выбрано</strong><span id="selected-hint">Отметьте картинки для сохранения</span></div></div>
+        <div class="destination"><span>Папка</span><strong id="destination-path" title=""></strong><button id="change-folder" class="text-button" type="button">Изменить</button></div>
+        <div class="export-actions"><button id="save-folder" class="button button-dark" type="button">В папку</button><button id="save-zip" class="button button-outline" type="button">В ZIP</button></div>
+      </footer>
+    </main>
+  </div>
+
+  <div id="drop-overlay" class="drop-overlay hidden" aria-hidden="true"><div><strong>Отпустите EPUB здесь</strong><span>Можно добавить сразу несколько книг</span></div></div>
+  <div id="preview-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-backdrop" data-close-modal></div>
+    <div class="modal-panel">
+      <div class="modal-top"><div><span id="modal-book"></span><h2 id="modal-title"></h2></div><button id="close-modal" class="icon-button" type="button" aria-label="Закрыть">×</button></div>
+      <div class="viewer-toolbar" role="toolbar" aria-label="Управление изображением">
+        <div class="viewer-controls"><button id="zoom-out" type="button" title="Уменьшить (−)" aria-label="Уменьшить">−</button><span id="zoom-level">100%</span><button id="zoom-in" type="button" title="Приблизить (+)" aria-label="Приблизить">+</button></div>
+        <div class="viewer-controls"><button id="fit-image" type="button">Уместить</button><button id="actual-size" type="button">100%</button></div>
+        <div class="viewer-controls"><button id="rotate-left" type="button" title="Повернуть влево" aria-label="Повернуть влево">↶</button><button id="rotate-right" type="button" title="Повернуть вправо" aria-label="Повернуть вправо">↷</button></div>
+        <span class="viewer-tip">Колесо — масштаб · перетаскивание — перемещение</span>
+      </div>
+      <div id="modal-image" class="modal-image"><button id="modal-prev" class="viewer-nav viewer-prev" type="button" aria-label="Предыдущая иллюстрация">‹</button><div id="image-stage" class="image-stage"><img id="modal-img" alt="Иллюстрация" draggable="false"></div><div id="modal-error" class="modal-error hidden"></div><button id="modal-next" class="viewer-nav viewer-next" type="button" aria-label="Следующая иллюстрация">›</button></div>
+      <div class="modal-bottom"><div class="image-facts"><strong id="modal-facts"></strong><span id="modal-source"></span></div><button id="modal-select" class="button button-primary" type="button"></button></div>
+    </div>
+  </div>
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+  <div id="about-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="about-title">
+    <div class="modal-backdrop" data-close-about></div>
+    <div class="about-panel">
+      <button id="close-about" class="icon-button about-close" type="button" aria-label="Закрыть">×</button>
+      <img src="assets/icon.png" alt="" width="72" height="72">
+      <h2 id="about-title">Иллюстрации EPUB</h2>
+      <p id="about-version" class="about-version">Версия 1.0.0</p>
+      <p class="about-description">Из книги — в вашу коллекцию.<br>Иллюстрации по главам, в папку или ZIP.</p>
+      <div class="about-credit"><span>Разработчик</span><button class="text-button" data-open-link="developer" type="button">dollar</button><span>Команда</span><button class="text-button" data-open-link="team" type="button">Дом Некроманта</button></div>
+      <button class="button button-primary" data-open-link="repository" type="button">Официальный репозиторий</button>
+      <p class="about-license">Сделано для вашей библиотеки. Лицензия MIT.</p>
+    </div>
+  </div>
+  <script src="viewer-math.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>
