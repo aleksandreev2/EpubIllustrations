@@ -1,5 +1,6 @@
 require('./epub.test');
 require('./export.test');
+require('./image-options.test');
 require('./viewer.test');
 require('./capture.test');
 require('./updates.test');

@@ -3,6 +3,25 @@ const assert = require('node:assert/strict');
 const { unzipSync, strFromU8 } = require('fflate');
 const { buildExport, makeZip, imageFormat, safePart } = require('../src/export');
 
+test('converts once for both layouts and packages actual encoded bytes and extension', async () => {
+  const png = Buffer.from([137,80,78,71,13,10,26,10,0]);
+  const webp = Buffer.from('RIFF0000WEBPencoded');
+  const book = { id: 'b', title: 'Книга', entries: { '1.png': png }, items: [{ id: '1', chapter: 'Начало', chapterIndex: 1, sourceType: 'embedded', archivePath: '1.png', originalName: '1.png' }] };
+  const options = { format: 'webp', quality: 80, maxDimension: 1920 }; let calls = 0;
+  const result = await buildExport([book], ['b:1'], null, 'both', options, async (data, format, received) => {
+    calls++; assert.deepEqual(Buffer.from(data), png); assert.equal(format.mime, 'image/png'); assert.deepEqual(received, options); return webp;
+  });
+  assert.equal(calls, 1); assert.equal(result.files.size, 2); assert.equal(result.imageCount, 1);
+  assert.equal(result.originalBytes, png.length); assert.equal(result.outputBytes, webp.length);
+  const zipped = unzipSync(makeZip(result.files));
+  for (const [name, bytes] of Object.entries(zipped)) { assert.ok(name.endsWith('.webp')); assert.deepEqual(Buffer.from(bytes), webp); }
+  const original = await buildExport([book], ['b:1'], null, 'flat', { format: 'original' }, () => { throw Error('must not reencode original'); });
+  assert.deepEqual(Buffer.from([...original.files.values()][0]), png);
+  const failed = await buildExport([book], ['b:1'], null, 'flat', options, async () => png);
+  assert.equal(failed.files.size, 0); assert.equal(failed.errors.length, 1);
+  await assert.rejects(buildExport([book], ['b:1'], null, 'flat', { format: 'bad' }), /формат/i);
+});
+
 test('keeps book and chapter structure while removing unsafe filename characters', async () => {
   const book = {
     id: 'book1', title: 'Книга: первая?', entries: { 'Images/1.jpg': Buffer.from('picture') },

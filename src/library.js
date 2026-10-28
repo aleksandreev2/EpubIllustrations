@@ -1,11 +1,12 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
+const { normalizeImageOptions } = require('./image-options');
 const LAYOUTS = new Set(['chapters', 'flat', 'both']);
 const clone = value => JSON.parse(JSON.stringify(value));
 
 function createLibraryStore(file, { now = Date.now } = {}) {
-  let data = { version: 1, books: [], selected: null, layout: 'chapters', history: [] };
+  let data = { version: 1, books: [], selected: null, layout: 'chapters', imageOptions: normalizeImageOptions(), history: [] };
   let loaded, writes = Promise.resolve(), warning = '', readOnly = false;
   const mutations = new Set();
   function snapshot() { return { ...clone(data), warning }; }
@@ -16,7 +17,10 @@ function createLibraryStore(file, { now = Date.now } = {}) {
         if (!raw || raw.version !== 1) throw Error('Неподдерживаемая версия библиотеки.');
         const books = (Array.isArray(raw.books) ? raw.books : []).filter(book => book && typeof book.id === 'string' && typeof book.filePath === 'string' && path.isAbsolute(book.filePath) && typeof book.title === 'string');
         const known = new Set(books.map(book => book.id));
+        let imageOptions;
+        try { imageOptions = normalizeImageOptions(raw.imageOptions); } catch { imageOptions = normalizeImageOptions(); }
         data = { version: 1, books, selected: Array.isArray(raw.selected) ? raw.selected.filter(key => typeof key === 'string' && known.has(key.split(':')[0])) : null,
+          imageOptions,
           layout: LAYOUTS.has(raw.layout) ? raw.layout : 'chapters',
           history: (Array.isArray(raw.history) ? raw.history : []).filter(record => record && typeof record.id === 'string' && typeof record.createdAt === 'string' && Array.isArray(record.sources) && record.sources.every(source => source && typeof source.id === 'string' && typeof source.title === 'string' && typeof source.filePath === 'string' && path.isAbsolute(source.filePath)) && ['zip', 'folder'].includes(record.format) && LAYOUTS.has(record.layout) && typeof record.destination === 'string' && path.isAbsolute(record.destination)) };
       } catch (error) {
@@ -73,10 +77,15 @@ function createLibraryStore(file, { now = Date.now } = {}) {
       await load(); if (!LAYOUTS.has(layout)) throw Error('Неизвестная структура экспорта.');
       data.layout = layout; await save();
     },
+    async setImageOptions(options) {
+      const validated = normalizeImageOptions(options);
+      await load(); data.imageOptions = validated; await save(); return clone(validated);
+    },
     async addExport(operation) {
       await load();
       if (!['zip', 'folder'].includes(operation.format) || !LAYOUTS.has(operation.layout) || !path.isAbsolute(operation.destination) || !Array.isArray(operation.sources)) throw Error('Некорректная запись истории.');
       const record = { id: randomUUID(), createdAt: new Date(now()).toISOString(), format: operation.format, layout: operation.layout, destination: operation.destination,
+        imageOptions: normalizeImageOptions(operation.imageOptions), originalBytes: operation.originalBytes || 0, outputBytes: operation.outputBytes || 0,
         imageCount: operation.imageCount, fileCount: operation.fileCount, sources: operation.sources.map(source => ({ id: source.id, title: String(source.title), filePath: source.filePath })), errors: (operation.errors || []).map(String) };
       data.history.unshift(record); await save(); return clone(record);
     },
@@ -86,7 +95,7 @@ function createLibraryStore(file, { now = Date.now } = {}) {
       await writes;
     }
   };
-  for (const name of ['recordBook', 'removeBook', 'setSelection', 'mergeSelection', 'setLayout', 'addExport']) {
+  for (const name of ['recordBook', 'removeBook', 'setSelection', 'mergeSelection', 'setLayout', 'setImageOptions', 'addExport']) {
     const mutate = api[name];
     api[name] = (...args) => {
       const task = Promise.resolve().then(() => mutate(...args));

@@ -1,20 +1,32 @@
 {
   "name": "novelpia-illustrations",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
-  "description": "Иллюстрации из EPUB по главам — в папку или ZIP, без пережатия",
-  "author": { "name": "dollar · Дом Некроманта", "url": "https://ranobelib.me/ru/user/726236" },
+  "description": "Иллюстрации из EPUB в папку или ZIP — оригинал, WebP, JPEG и PNG с настройкой качества",
+  "author": {
+    "name": "dollar · Дом Некроманта",
+    "url": "https://ranobelib.me/ru/user/726236"
+  },
   "license": "MIT",
   "homepage": "https://github.com/aleksandreev2/EpubIllustrations",
-  "repository": { "type": "git", "url": "https://github.com/aleksandreev2/EpubIllustrations.git" },
-  "bugs": { "url": "https://github.com/aleksandreev2/EpubIllustrations/issues" },
-  "engines": { "node": ">=22.4" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aleksandreev2/EpubIllustrations.git"
+  },
+  "bugs": {
+    "url": "https://github.com/aleksandreev2/EpubIllustrations/issues"
+  },
+  "engines": {
+    "node": ">=22.4"
+  },
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
     "test": "node tests/run.js",
     "demo": "node scripts/create-demo.cjs",
     "screenshots": "node scripts/capture-screenshots.cjs",
+    "images:smoke": "electron scripts/image-conversion-smoke.cjs",
+    "images:ui-smoke": "node scripts/image-settings-smoke.cjs",
     "dist": "electron-builder --win nsis portable",
     "checksums": "node scripts/checksums.cjs",
     "updates:smoke": "node scripts/updates-smoke.cjs",
@@ -31,11 +43,37 @@
     "appId": "local.novelpia.illustrations",
     "productName": "Иллюстрации EPUB",
     "asar": true,
-    "files": ["src/**/*", "package.json", "LICENSE", "THIRD_PARTY_NOTICES.md"],
-    "directories": {"output": "dist"},
-    "win": {"target": ["nsis", "portable"], "icon": "src/assets/icon.ico"},
-    "nsis": {"artifactName": "EpubIllustrations-${version}-Setup.${ext}", "oneClick": false, "allowToChangeInstallationDirectory": true, "createDesktopShortcut": true, "createStartMenuShortcut": true, "shortcutName": "Иллюстрации EPUB"},
-    "portable": {"artifactName": "EpubIllustrations-${version}-Portable.${ext}"},
-    "publish": {"provider": "github", "owner": "aleksandreev2", "repo": "EpubIllustrations"}
+    "files": [
+      "src/**/*",
+      "package.json",
+      "LICENSE",
+      "THIRD_PARTY_NOTICES.md"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "src/assets/icon.ico"
+    },
+    "nsis": {
+      "artifactName": "EpubIllustrations-${version}-Setup.${ext}",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Иллюстрации EPUB"
+    },
+    "portable": {
+      "artifactName": "EpubIllustrations-${version}-Portable.${ext}"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "aleksandreev2",
+      "repo": "EpubIllustrations"
+    }
   }
 }

@@ -19,6 +19,12 @@ function renderHistory() {
     heading.append(element('span', 'history-format', record.format === 'zip' ? 'ZIP' : 'Папка'), caption);
     const detail = element('div', 'history-detail');
     detail.append(element('span', '', formatCount(record.imageCount || 0, 'изображение', 'изображения', 'изображений')), element('span', '', exportLayoutLabels[record.layout]));
+    if (record.imageOptions) {
+      let label;
+      try { label = ImageOptions.describeImageOptions(record.imageOptions); } catch { label = 'Оригинал'; }
+      detail.append(element('span', '', label));
+    }
+    if (record.originalBytes > record.outputBytes && record.outputBytes > 0) detail.append(element('span', '', `Вес меньше на ${Math.round((1 - record.outputBytes / record.originalBytes) * 100)}%`));
     if (record.fileCount !== record.imageCount) detail.append(element('span', '', formatCount(record.fileCount || 0, 'файл', 'файла', 'файлов')));
     const destination = element('div', 'history-path', record.destination); destination.title = record.destination;
     const actions = element('div', 'history-actions');

@@ -6,6 +6,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'">
   <title>Иллюстрации EPUB</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="image-settings.css">
   <link rel="stylesheet" href="viewer.css">
   <link rel="stylesheet" href="about.css">
   <link rel="stylesheet" href="updates.css">
@@ -73,6 +74,7 @@
         <div class="export-summary"><span class="selected-indicator" aria-hidden="true"></span><div><strong id="selected-count">0 выбрано</strong><span id="selected-hint">Отметьте картинки для сохранения</span></div></div>
         <div class="destination"><span>Папка</span><strong id="destination-path" title=""></strong><button id="change-folder" class="text-button" type="button">Изменить</button></div>
         <label class="export-layout"><span>Структура для каждой книги</span><select id="export-layout" aria-label="Структура сохранения"><option value="chapters">По папкам-главам</option><option value="flat">Все в одной папке</option><option value="both">Оба варианта</option></select></label>
+        <button id="image-settings-button" class="image-settings-button" type="button" aria-haspopup="dialog"><span>Формат и качество</span><strong id="image-settings-summary">Оригинал</strong></button>
         <div class="export-actions"><button id="save-folder" class="button button-dark" type="button">В папку</button><button id="save-zip" class="button button-outline" type="button">В ZIP</button></div>
       </footer>
     </main>
@@ -94,6 +96,17 @@
     </div>
   </div>
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+  <dialog id="image-settings-modal" class="image-settings-modal" aria-labelledby="image-settings-title" aria-describedby="image-settings-description">
+    <div class="image-settings-heading"><div><h2 id="image-settings-title">Формат и качество</h2><p id="image-settings-description">Для сохранения в папку и ZIP</p></div><button id="close-image-settings" class="icon-button" type="button" aria-label="Закрыть настройки формата">×</button></div>
+    <label class="image-setting-field" for="image-format"><span>Формат изображения</span><select id="image-format"><option value="original">Оригинал — без изменений</option><option value="webp">WebP — компактные файлы</option><option value="jpeg">JPEG — для большинства программ</option><option value="png">PNG — без потерь</option></select></label>
+    <p id="image-format-description" class="image-setting-help"></p>
+    <div class="image-quality-field"><div><label for="image-quality">Качество</label><output id="image-quality-value" for="image-quality">85%</output></div><input id="image-quality" type="range" min="1" max="100" step="1" value="85"><p id="image-quality-help" class="image-setting-help">Меньше — легче файл. Больше — точнее детали.</p></div>
+    <label class="image-setting-field" for="image-max-dimension"><span>Размер по длинной стороне</span><select id="image-max-dimension"><option value="0">Исходный размер</option><option value="3840">До 3840 пикселей</option><option value="2560">До 2560 пикселей</option><option value="1920">До 1920 пикселей</option><option value="1280">До 1280 пикселей</option></select></label>
+    <p id="image-resize-help" class="image-setting-help">Пропорции сохраняются. Маленькие изображения не увеличиваются.</p>
+    <p id="image-conversion-note" class="image-conversion-note">Исходные EPUB не меняются. При преобразовании анимация сохраняется первым кадром, метаданные удаляются.</p>
+    <p id="image-settings-error" class="image-settings-error" role="alert" hidden></p>
+    <div class="image-settings-actions"><button id="cancel-image-settings" class="button button-outline" type="button">Отмена</button><button id="save-image-settings" class="button button-primary" type="button">Применить</button></div>
+  </dialog>
   <div id="about-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="about-title">
     <div class="modal-backdrop" data-close-about></div>
     <div class="about-panel">
@@ -115,8 +128,10 @@
     </div>
   </div>
   <script src="viewer-math.js"></script>
+  <script src="image-options.js"></script>
   <script src="history-ui.js"></script>
   <script src="renderer.js"></script>
+  <script src="image-settings-ui.js"></script>
   <script src="updates-ui.js"></script>
 </body>
 </html>

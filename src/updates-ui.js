@@ -31,7 +31,7 @@ async function installAppUpdate() {
   if (updateInstalling || updateChecking) return;
   if (state.busy) { $('update-status').textContent = 'Дождитесь завершения сохранения иллюстраций.'; return; }
   updateInstalling = true; state.busy = true; updateExportBar();
-  const controls = ['check-updates', 'automatic-updates', 'update-notice-install', 'about-update-install', 'update-notice-open', 'about-update-open', 'update-notice-dismiss', 'add-button', 'empty-add', 'export-layout', 'change-folder'];
+  const controls = ['check-updates', 'automatic-updates', 'update-notice-install', 'about-update-install', 'update-notice-open', 'about-update-open', 'update-notice-dismiss', 'add-button', 'empty-add', 'export-layout', 'change-folder', 'image-settings-button'];
   controls.forEach(id => { $(id).disabled = true; });
   let started = false;
   try {

@@ -4,6 +4,17 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const { createLibraryStore } = require('../src/library');
+
+test('persists encoding preferences and exact settings in history across restart', async t => {
+  const file = await fixture(t), store = createLibraryStore(file);
+  const imageOptions = { format: 'webp', quality: 82, maxDimension: 1920 };
+  await store.setImageOptions(imageOptions);
+  await store.addExport({ format: 'folder', layout: 'both', destination: path.resolve('output'), sources: [], imageCount: 2, fileCount: 4, imageOptions, originalBytes: 5000, outputBytes: 1200 });
+  const restarted = await createLibraryStore(file).load();
+  assert.deepEqual(restarted.imageOptions, imageOptions);
+  assert.deepEqual(restarted.history[0].imageOptions, imageOptions);
+  assert.equal(restarted.history[0].outputBytes, 1200);
+});
 async function fixture(t) {
   const root = path.resolve(os.tmpdir()); const dir = await fs.mkdtemp(path.join(root, 'epub-library-'));
   t.after(async () => { const resolved = path.resolve(dir); assert.ok(resolved.startsWith(root + path.sep)); await fs.rm(resolved, { recursive: true, force: true }); });

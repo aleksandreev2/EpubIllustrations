@@ -1,6 +1,6 @@
 const api = window.illustrations;
 const $ = id => document.getElementById(id);
-const state = { books: [], history: [], selected: new Set(), unavailableSelected: new Set(), activeBook: 'all', view: 'gallery', filter: 'all', search: '', outputDirectory: '', exportLayout: 'chapters', busy: false, ready: false };
+const state = { books: [], history: [], selected: new Set(), unavailableSelected: new Set(), activeBook: 'all', view: 'gallery', filter: 'all', search: '', outputDirectory: '', exportLayout: 'chapters', imageOptions: { format: 'original', quality: 85, maxDimension: 0 }, busy: false, ready: false };
 let savedSelection = '';
 let selectionWarningShown = false;
 let clearSelectionRevision = 0;
@@ -194,6 +194,7 @@ function updateExportBar() {
   $('selected-hint').textContent = state.unavailableSelected.size ? `Отметки без исходного EPUB: ${state.unavailableSelected.size}` : count ? 'Готово к сохранению' : 'Отметьте картинки для сохранения';
   $('save-folder').disabled = !count || state.busy;
   $('save-zip').disabled = !count || state.busy;
+  if (typeof renderImageSettingsSummary === 'function') renderImageSettingsSummary();
   $('destination-path').textContent = state.outputDirectory;
   $('destination-path').title = state.outputDirectory;
   if (state.ready) {
@@ -369,7 +370,7 @@ async function exportSelected(mode) {
   const normalText = button.textContent;
   button.textContent = 'Сохраняем…';
   try {
-    const result = await api.export(mode, [...state.selected], state.exportLayout);
+    const result = await api.export(mode, [...state.selected], state.exportLayout, state.imageOptions);
     if (result.canceled) return;
     if (!result.count) {
       showToast(`Не удалось сохранить изображения. ${result.errors[0] || 'Проверьте файлы и ссылки.'}`);
@@ -377,6 +378,7 @@ async function exportSelected(mode) {
     }
     let message = `${formatCount(result.count, 'изображение сохранено', 'изображения сохранены', 'изображений сохранено')}`;
     if (result.fileCount && result.fileCount !== result.count) message += ` (${formatCount(result.fileCount, 'файл', 'файла', 'файлов')})`;
+    if (state.imageOptions.format !== 'original' && result.originalBytes > result.outputBytes) message += `. Вес уменьшен на ${Math.round((1 - result.outputBytes / result.originalBytes) * 100)}%`;
     if (result.errors.length) message += `. Ошибок: ${result.errors.length}. ${result.errors[0]}`;
     if (result.historyWarning) message += `. ${result.historyWarning}`;
     if (result.history) { state.history = result.history; renderBooks(); if (state.view === 'history') renderHistory(); }
@@ -474,6 +476,7 @@ function bindEvents() {
 bindEvents();
 api.state().then(initial => {
   state.books = initial.books; state.history = initial.history || []; state.outputDirectory = initial.outputDirectory; state.exportLayout = initial.exportLayout || 'chapters';
+  state.imageOptions = initial.imageOptions || { format: 'original', quality: 85, maxDimension: 0 };
   const available = new Set(state.books.flatMap(book => book.items.map(item => key(book, item))));
   const selected = initial.selected || state.books.flatMap(book => book.items.filter(item => !item.isCover).map(item => key(book, item)));
   state.selected = new Set(selected.filter(key => available.has(key))); state.unavailableSelected = new Set(selected.filter(key => !available.has(key)));

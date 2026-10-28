@@ -6,6 +6,8 @@ const { scanEpub } = require('./epub');
 const { buildExport, makeZip, imageFormat } = require('./export');
 const { initializeUpdates } = require('./update-runtime');
 const { createLibraryStore, LAYOUTS } = require('./library');
+const { normalizeImageOptions } = require('./image-options');
+const { createImageConverter } = require('./image-converter');
 if (process.env.EPUB_ILLUSTRATIONS_USER_DATA && path.isAbsolute(process.env.EPUB_ILLUSTRATIONS_USER_DATA)) app.setPath('userData', process.env.EPUB_ILLUSTRATIONS_USER_DATA);
 
 const books = new Map();
@@ -199,7 +201,7 @@ app.on('before-quit', event => {
 
 ipcMain.handle('state', () => {
   const saved = library.snapshot();
-  return { books: [...books.values()].map(publicBook), outputDirectory, version: app.getVersion(), history: saved.history, selected: saved.selected, exportLayout: saved.layout, libraryWarning };
+  return { books: [...books.values()].map(publicBook), outputDirectory, version: app.getVersion(), history: saved.history, selected: saved.selected, exportLayout: saved.layout, imageOptions: saved.imageOptions, libraryWarning };
 });
 ipcMain.handle('library:selection', async (_, keys, clearUnavailable) => {
   if (!Array.isArray(keys)) throw Error('Некорректный выбор иллюстраций.');
@@ -210,6 +212,10 @@ ipcMain.handle('library:selection', async (_, keys, clearUnavailable) => {
   await library.setSelection([...keys.filter(key => allowed.has(key)), ...(clearUnavailable === true ? [] : preserved)]);
 });
 ipcMain.handle('library:layout', (_, layout) => library.setLayout(layout));
+ipcMain.handle('library:image-options', (_, options) => {
+  if (exporting || updateRuntime?.isInstalling()) throw Error('Дождитесь завершения сохранения или обновления.');
+  return library.setImageOptions(options);
+});
 ipcMain.handle('history:restore', async (_, id) => {
   const record = library.snapshot().history.find(item => item.id === id);
   if (!record) throw Error('Запись истории не найдена.');
@@ -274,15 +280,16 @@ ipcMain.handle('preview', async (_, bookId, itemId) => {
   if (!format) throw Error('не удалось прочитать изображение');
   return `data:${format.mime};base64,${Buffer.from(response.data).toString('base64')}`;
 });
-ipcMain.handle('export', async (_, mode, selectedKeys, layout) => {
+ipcMain.handle('export', async (_, mode, selectedKeys, layout, imageOptions) => {
   if (exporting || updateRuntime?.isInstalling()) throw Error('Дождитесь завершения текущего сохранения или обновления.');
   exporting = true;
-  try { return await exportSelection(mode, selectedKeys, layout); } finally { exporting = false; }
+  try { return await exportSelection(mode, selectedKeys, layout, imageOptions); } finally { exporting = false; }
 });
-async function exportSelection(mode, selectedKeys, layout = library.snapshot().layout) {
+async function exportSelection(mode, selectedKeys, layout = library.snapshot().layout, settings = library.snapshot().imageOptions) {
   if (!['folder', 'zip'].includes(mode) || !Array.isArray(selectedKeys)) throw Error('неверные параметры экспорта');
   if (!selectedKeys.length) throw Error('выберите хотя бы одну иллюстрацию');
   if (!LAYOUTS.has(layout)) throw Error('Неизвестная структура экспорта.');
+  const imageOptions = normalizeImageOptions(settings);
   const exportBooks = [...books.values()];
   const selected = new Set(selectedKeys);
   const sources = exportBooks.filter(book => book.items.some(item => selected.has(`${book.id}:${item.id}`))).map(book => ({ id: book.id, title: book.title, filePath: book.filePath }));
@@ -292,7 +299,11 @@ async function exportSelection(mode, selectedKeys, layout = library.snapshot().l
     if (choice.canceled || !choice.filePath) return { canceled: true };
     destination = choice.filePath;
   }
-  const { files, errors, imageCount } = await buildExport(exportBooks, selectedKeys, downloadRemote, layout);
+  const converter = imageOptions.format !== 'original' ? createImageConverter(BrowserWindow) : null;
+  let result;
+  try { result = await buildExport(exportBooks, selectedKeys, downloadRemote, layout, imageOptions, converter?.convert); }
+  finally { converter?.close(); }
+  const { files, errors, imageCount, originalBytes, outputBytes } = result;
   if (!files.size) return { count: 0, errors, destination: null };
   if (mode === 'zip') {
     await fs.writeFile(destination, makeZip(files));
@@ -305,9 +316,9 @@ async function exportSelection(mode, selectedKeys, layout = library.snapshot().l
     }
   }
   let historyWarning = '';
-  try { await library.addExport({ format: mode, layout, destination, sources, imageCount, fileCount: files.size, errors }); }
+  try { await library.addExport({ format: mode, layout, destination, sources, imageCount, fileCount: files.size, errors, imageOptions, originalBytes, outputBytes }); }
   catch (error) { historyWarning = `История не сохранена: ${error.message}`; }
-  return { count: imageCount, fileCount: files.size, errors, destination, history: library.snapshot().history, historyWarning };
+  return { count: imageCount, fileCount: files.size, errors, destination, history: library.snapshot().history, historyWarning, originalBytes, outputBytes };
 }
 ipcMain.handle('open-folder', async (_, folder) => {
   const { shell } = require('electron');
