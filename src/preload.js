@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('illustrations', {
   setImageOptions: options => ipcRenderer.invoke('library:image-options', options),
   saveSelection: (keys, clearUnavailable = false) => ipcRenderer.invoke('library:selection', keys, clearUnavailable),
   setExportLayout: layout => ipcRenderer.invoke('library:layout', layout),
+  setExportName: (id, name) => ipcRenderer.invoke('library:export-name', id, name),
   restoreHistory: id => ipcRenderer.invoke('history:restore', id),
   openHistory: id => ipcRenderer.invoke('history:open', id),
   relinkBook: id => ipcRenderer.invoke('library:relink', id),

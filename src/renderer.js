@@ -75,11 +75,18 @@ function renderBooks() {
     const entry = element('div', `book-entry${state.view !== 'history' && state.activeBook === book.id ? ' active' : ''}`);
     entry.setAttribute('role', 'button');
     entry.setAttribute('tabindex', '0');
-    entry.title = book.title;
+    entry.title = book.title + (book.exportName ? `\nПапка: ${book.folderName}` : '');
     entry.append(element('span', 'book-icon', '▤'));
     const label = element('span', 'book-label');
     label.append(element('strong', '', book.title), element('small', '', book.missing ? 'Файл недоступен' : formatCount(book.count ?? book.items.length, 'изображение', 'изображения', 'изображений')));
+    if (book.exportName) label.append(element('small', 'book-folder-caption', `Папка: ${book.folderName}`));
     entry.append(label);
+    const rename = element('button', 'rename-book', '✎'); rename.type = 'button';
+    rename.title = 'Имя папки при сохранении'; rename.setAttribute('aria-label', `Имя папки для ${book.title}`);
+    rename.disabled = state.busy;
+    rename.addEventListener('click', event => { event.stopPropagation(); openFolderNameDialog(book.id); });
+    rename.addEventListener('keydown', event => event.stopPropagation());
+    entry.append(rename);
     const remove = element('button', 'remove-book', '×');
     remove.type = 'button';
     remove.title = 'Убрать книгу из библиотеки';
@@ -195,6 +202,7 @@ function updateExportBar() {
   $('save-folder').disabled = !count || state.busy;
   $('save-zip').disabled = !count || state.busy;
   if (typeof renderImageSettingsSummary === 'function') renderImageSettingsSummary();
+  if (typeof renderBookFolderControl === 'function') renderBookFolderControl();
   $('destination-path').textContent = state.outputDirectory;
   $('destination-path').title = state.outputDirectory;
   if (state.ready) {

@@ -1,6 +1,6 @@
 {
   "name": "novelpia-illustrations",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "private": true,
   "description": "Иллюстрации из EPUB в папку или ZIP — оригинал, WebP, JPEG и PNG с настройкой качества",
   "author": {
@@ -27,6 +27,7 @@
     "screenshots": "node scripts/capture-screenshots.cjs",
     "images:smoke": "electron scripts/image-conversion-smoke.cjs",
     "images:ui-smoke": "node scripts/image-settings-smoke.cjs",
+    "folders:ui-smoke": "node scripts/folder-name-smoke.cjs",
     "dist": "electron-builder --win nsis portable",
     "checksums": "node scripts/checksums.cjs",
     "updates:smoke": "node scripts/updates-smoke.cjs",

@@ -3,6 +3,17 @@ const assert = require('node:assert/strict');
 const { unzipSync, strFromU8 } = require('fflate');
 const { buildExport, makeZip, imageFormat, safePart } = require('../src/export');
 
+test('custom book folder names apply to every layout and ZIP without changing book titles', async () => {
+  const books = ['b1', 'b2'].map(id => ({ id, title: 'Одинаковое название', exportName: id === 'b1' ? 'Первая коллекция' : 'Вторая коллекция', entries: { 'a.jpg': Buffer.from(id) }, items: [{ id: 'a', chapter: 'Глава', chapterIndex: 1, sourceType: 'embedded', archivePath: 'a.jpg', originalName: 'a.jpg' }] }));
+  for (const layout of ['chapters', 'flat', 'both']) {
+    const result = await buildExport(books, ['b1:a', 'b2:a'], null, layout);
+    const zipped = unzipSync(makeZip(result.files));
+    assert.deepEqual(new Set(Object.keys(zipped).map(name => name.split('/')[0])), new Set(['Первая коллекция', 'Вторая коллекция']));
+    assert.equal(result.bookFolders.get('b1'), 'Первая коллекция');
+  }
+  assert.equal(books[0].title, 'Одинаковое название');
+});
+
 test('converts once for both layouts and packages actual encoded bytes and extension', async () => {
   const png = Buffer.from([137,80,78,71,13,10,26,10,0]);
   const webp = Buffer.from('RIFF0000WEBPencoded');

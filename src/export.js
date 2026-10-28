@@ -1,12 +1,6 @@
 const { zipSync } = require('fflate');
 const { normalizeImageOptions } = require('./image-options');
-
-function safePart(value) {
-  let result = String(value || '').replace(/[<>:"/\\|?*\x00-\x1f]/g, '').replace(/[. ]+$/g, '').replace(/\s+/g, ' ').trim().slice(0, 72).replace(/[. ]+$/g, '');
-  if (!result) result = 'Без названия';
-  if (/^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)/i.test(result)) result += '_';
-  return result;
-}
+const { safePart } = require('./folder-name');
 
 function imageFormat(input, contentType = '', name = '', allowExtensionFallback = false) {
   const b = Buffer.from(input);
@@ -32,13 +26,15 @@ async function buildExport(books, selectedKeys, loadRemote, layout = 'chapters',
   let imageCount = 0;
   let originalBytes = 0, outputBytes = 0;
   const bookNames = new Set();
+  const bookFolders = new Map();
   for (const book of books) {
     const candidates = book.items.filter(item => selected.has(`${book.id}:${item.id}`));
     if (!candidates.length) continue;
-    const base = safePart(book.title);
+    const base = safePart(book.exportName || book.title);
     let folder = base, suffix = 2;
     while (bookNames.has(folder.toLowerCase())) folder = `${base} (${suffix++})`;
     bookNames.add(folder.toLowerCase());
+    bookFolders.set(book.id, folder);
     const indices = new Map();
     for (const item of candidates) {
       try {
@@ -76,7 +72,7 @@ async function buildExport(books, selectedKeys, loadRemote, layout = 'chapters',
       }
     }
   }
-  return { files, errors, imageCount, originalBytes, outputBytes };
+  return { files, errors, imageCount, originalBytes, outputBytes, bookFolders };
 }
 
 function makeZip(files) {

@@ -3,7 +3,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { randomUUID, createHash } = require('node:crypto');
 const { scanEpub } = require('./epub');
-const { buildExport, makeZip, imageFormat } = require('./export');
+const { buildExport, makeZip, imageFormat, safePart } = require('./export');
 const { initializeUpdates } = require('./update-runtime');
 const { createLibraryStore, LAYOUTS } = require('./library');
 const { normalizeImageOptions } = require('./image-options');
@@ -21,7 +21,7 @@ let library;
 let libraryWarning = '';
 
 function publicBook(book) {
-  return { id: book.id, title: book.title, filename: book.filename, items: book.items, missing: Boolean(book.missing), missingReason: book.missingReason || '', count: book.missing ? book.count || 0 : book.items.length };
+  return { id: book.id, title: book.title, exportName: book.exportName || '', folderName: safePart(book.exportName || book.title), filename: book.filename, items: book.items, missing: Boolean(book.missing), missingReason: book.missingReason || '', count: book.missing ? book.count || 0 : book.items.length };
 }
 async function readBook(filePath, id = randomUUID()) {
   const stat = await fs.stat(filePath);
@@ -36,6 +36,7 @@ async function rememberImportedBook(book, previous) {
   const preserve = Boolean(previous && sameSource(previous.fingerprint, book.fingerprint));
   let warning = previous && !preserve ? 'Содержимое EPUB изменилось: отмечены все иллюстрации глав новой версии.' : '';
   try { await library.recordBook(bookRecord(book)); } catch (error) { warning += ` Метаданные книги не сохранены: ${error.message}`; }
+  book.exportName = library.snapshot().books.find(record => record.id === book.id)?.exportName ?? previous?.exportName ?? '';
   let chosen;
   try {
     chosen = await library.mergeSelection({ bookId: book.id, itemKeys: [...available], defaultKeys: defaults, preserve,
@@ -51,7 +52,7 @@ async function restoreLibrary() {
   let selected = saved.selected;
   for (const record of saved.books) {
     try {
-      const book = await readBook(record.filePath, record.id); books.set(book.id, book);
+      const book = await readBook(record.filePath, record.id); book.exportName = record.exportName || ''; books.set(book.id, book);
       if (JSON.stringify(record.fingerprint) !== JSON.stringify(book.fingerprint)) {
         try { await library.recordBook(bookRecord(book)); } catch (error) { libraryWarning = error.message; }
         if (selected && !sameSource(record.fingerprint, book.fingerprint)) {
@@ -212,6 +213,14 @@ ipcMain.handle('library:selection', async (_, keys, clearUnavailable) => {
   await library.setSelection([...keys.filter(key => allowed.has(key)), ...(clearUnavailable === true ? [] : preserved)]);
 });
 ipcMain.handle('library:layout', (_, layout) => library.setLayout(layout));
+ipcMain.handle('library:export-name', async (_, id, name) => {
+  if (exporting || importing > 0 || updateRuntime?.isInstalling()) throw Error('Дождитесь завершения добавления книг, сохранения или обновления.');
+  const book = books.get(id);
+  if (!book) throw Error('Книга не найдена.');
+  await library.setExportName(id, name);
+  book.exportName = library.snapshot().books.find(record => record.id === id)?.exportName || '';
+  return publicBook(book);
+});
 ipcMain.handle('library:image-options', (_, options) => {
   if (exporting || updateRuntime?.isInstalling()) throw Error('Дождитесь завершения сохранения или обновления.');
   return library.setImageOptions(options);
@@ -290,7 +299,7 @@ async function exportSelection(mode, selectedKeys, layout = library.snapshot().l
   if (!selectedKeys.length) throw Error('выберите хотя бы одну иллюстрацию');
   if (!LAYOUTS.has(layout)) throw Error('Неизвестная структура экспорта.');
   const imageOptions = normalizeImageOptions(settings);
-  const exportBooks = [...books.values()];
+  const exportBooks = [...books.values()].map(book => ({ ...book }));
   const selected = new Set(selectedKeys);
   const sources = exportBooks.filter(book => book.items.some(item => selected.has(`${book.id}:${item.id}`))).map(book => ({ id: book.id, title: book.title, filePath: book.filePath }));
   let destination = outputDirectory;
@@ -303,7 +312,8 @@ async function exportSelection(mode, selectedKeys, layout = library.snapshot().l
   let result;
   try { result = await buildExport(exportBooks, selectedKeys, downloadRemote, layout, imageOptions, converter?.convert); }
   finally { converter?.close(); }
-  const { files, errors, imageCount, originalBytes, outputBytes } = result;
+  const { files, errors, imageCount, originalBytes, outputBytes, bookFolders } = result;
+  for (const source of sources) source.folderName = bookFolders.get(source.id);
   if (!files.size) return { count: 0, errors, destination: null };
   if (mode === 'zip') {
     await fs.writeFile(destination, makeZip(files));

@@ -22,6 +22,7 @@ npm start
 | `src/image-options.js` | Проверка параметров, размеры без увеличения, подписи форматов |
 | `src/image-converter.js`, `src/converter.js` | Изолированное локальное преобразование встроенными кодеками Electron |
 | `src/image-settings-ui.js` | Окно формата, качества и размера |
+| `src/folder-name.js`, `src/folder-name-ui.js` | Имена папок книг, проверка Windows и редактирование |
 | `src/library.js` | Атомарное сохранение библиотеки, выбора, структуры экспорта и истории |
 | `src/history-ui.js` | История сохранений и действия с завершёнными результатами |
 | `src/renderer.js` | Галерея, выбор, предпросмотр, масштаб, поворот, авторство |
@@ -50,6 +51,7 @@ npm run demo
 npm run screenshots
 npm run images:smoke
 npm run images:ui-smoke
+npm run folders:ui-smoke
 ```
 
 Первый скрипт создаёт книги в `examples/generated/`, второй — пять снимков
@@ -65,6 +67,10 @@ npm run images:ui-smoke
 отмену, историю и перезапуск; он создаёт шестой снимок `format-quality.png`.
 Для проверки собранной portable-версии задайте `EPUB_CAPTURE_EXECUTABLE`.
 
+`folders:ui-smoke` проверяет две книги с одинаковыми заголовками, собственные
+имена папок, все структуры, перезапуск, историю, отмену, сброс и недоступный
+источник. Создаёт снимок `folder-name.png`.
+
 Преобразование использует встроенный [Canvas.toBlob](https://developer.mozilla.org/en-US/docs/Web/API/HTMLCanvasElement/toBlob)
 в скрытом sandbox-окне без доступа к Node.js, сети и пользовательским книгам.
 В режиме «Оригинал» кодеки не вызываются. Веб-движок может обрезать WebP со
@@ -79,8 +85,8 @@ npm run checksums
 
 В `dist/` появятся:
 
-- `EpubIllustrations-1.2.0-Setup.exe` — установщик NSIS с выбором папки;
-- `EpubIllustrations-1.2.0-Portable.exe` — версия без установки;
+- `EpubIllustrations-1.3.0-Setup.exe` — установщик NSIS с выбором папки;
+- `EpubIllustrations-1.3.0-Portable.exe` — версия без установки;
 - `SHA256SUMS.txt` — контрольные суммы файлов.
 
 Номер в именах берётся из `package.json`. Дистрибутив включает Electron,

@@ -5,6 +5,21 @@ const path = require('node:path');
 const os = require('node:os');
 const { createLibraryStore } = require('../src/library');
 
+test('custom folder name survives metadata refresh, restart and reset without changing completed history', async t => {
+  const file = await fixture(t), store = createLibraryStore(file);
+  await store.recordBook(book()); await store.setExportName('book1', 'Моя коллекция');
+  await store.addExport({ ...operation(), sources: [{ ...operation().sources[0], folderName: 'Моя коллекция' }] });
+  await store.recordBook({ ...book(), title: 'Новое название в EPUB' });
+  const reopened = createLibraryStore(file); await reopened.load();
+  assert.equal(reopened.snapshot().books[0].exportName, 'Моя коллекция');
+  assert.equal(reopened.snapshot().history[0].sources[0].folderName, 'Моя коллекция');
+  await assert.rejects(reopened.setExportName('book1', '../Чужая папка'), /названи|символ/i);
+  await assert.rejects(reopened.setExportName('missing', 'Папка'), /книг/i);
+  await reopened.setExportName('book1', ''); await reopened.flush();
+  assert.equal(reopened.snapshot().books[0].exportName, '');
+  assert.equal(reopened.snapshot().history[0].sources[0].folderName, 'Моя коллекция');
+});
+
 test('persists encoding preferences and exact settings in history across restart', async t => {
   const file = await fixture(t), store = createLibraryStore(file);
   const imageOptions = { format: 'webp', quality: 82, maxDimension: 1920 };

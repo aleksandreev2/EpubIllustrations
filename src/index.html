@@ -7,6 +7,7 @@
   <title>Иллюстрации EPUB</title>
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="image-settings.css">
+  <link rel="stylesheet" href="folder-name.css">
   <link rel="stylesheet" href="viewer.css">
   <link rel="stylesheet" href="about.css">
   <link rel="stylesheet" href="updates.css">
@@ -52,6 +53,7 @@
           <div><div class="eyebrow">Галерея книги</div><h1 id="view-title">Все иллюстрации</h1><p id="view-subtitle"></p></div>
           <div class="heading-count"><strong id="visible-count">0</strong><span>изображений</span></div>
         </div>
+        <div id="book-folder-row" class="book-folder-row" hidden><div><span>Папка при сохранении</span><strong id="book-folder-name"></strong></div><button id="edit-book-folder" class="button button-outline" type="button" aria-haspopup="dialog">Имя папки</button></div>
         <div class="controls">
           <label class="search"><span aria-hidden="true">⌕</span><input id="search-input" type="search" placeholder="Найти главу или книгу" autocomplete="off"></label>
           <div class="filter-buttons" role="group" aria-label="Фильтр изображений">
@@ -107,6 +109,14 @@
     <p id="image-settings-error" class="image-settings-error" role="alert" hidden></p>
     <div class="image-settings-actions"><button id="cancel-image-settings" class="button button-outline" type="button">Отмена</button><button id="save-image-settings" class="button button-primary" type="button">Применить</button></div>
   </dialog>
+  <dialog id="folder-name-modal" class="image-settings-modal folder-name-modal" aria-labelledby="folder-name-title" aria-describedby="folder-name-book">
+    <div class="image-settings-heading"><div><h2 id="folder-name-title">Имя папки книги</h2><p id="folder-name-book"></p></div><button id="close-folder-name" class="icon-button" type="button" aria-label="Закрыть имя папки">×</button></div>
+    <label class="image-setting-field" for="folder-name-input"><span>Название папки при сохранении</span><input id="folder-name-input" type="text" maxlength="72" autocomplete="off" spellcheck="false"></label>
+    <p class="image-setting-help">Для папки и ZIP, во всех режимах структуры. Пустое поле — название книги.</p>
+    <div class="folder-name-preview"><span>Будет сохранено в</span><strong id="folder-name-preview"></strong></div>
+    <p id="folder-name-error" class="image-settings-error" role="alert" hidden></p>
+    <div class="image-settings-actions folder-name-actions"><button id="reset-folder-name" class="text-button" type="button">Название книги</button><button id="cancel-folder-name" class="button button-outline" type="button">Отмена</button><button id="save-folder-name" class="button button-primary" type="button">Сохранить</button></div>
+  </dialog>
   <div id="about-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="about-title">
     <div class="modal-backdrop" data-close-about></div>
     <div class="about-panel">
@@ -129,9 +139,11 @@
   </div>
   <script src="viewer-math.js"></script>
   <script src="image-options.js"></script>
+  <script src="folder-name.js"></script>
   <script src="history-ui.js"></script>
   <script src="renderer.js"></script>
   <script src="image-settings-ui.js"></script>
+  <script src="folder-name-ui.js"></script>
   <script src="updates-ui.js"></script>
 </body>
 </html>

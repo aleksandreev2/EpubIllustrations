@@ -26,6 +26,8 @@ function renderHistory() {
     }
     if (record.originalBytes > record.outputBytes && record.outputBytes > 0) detail.append(element('span', '', `Вес меньше на ${Math.round((1 - record.outputBytes / record.originalBytes) * 100)}%`));
     if (record.fileCount !== record.imageCount) detail.append(element('span', '', formatCount(record.fileCount || 0, 'файл', 'файла', 'файлов')));
+    const folderNames = record.sources.map(source => source.folderName).filter(Boolean);
+    if (folderNames.length) detail.append(element('span', '', `Папки: ${folderNames.join(', ')}`));
     const destination = element('div', 'history-path', record.destination); destination.title = record.destination;
     const actions = element('div', 'history-actions');
     const open = element('button', 'button button-outline', 'Показать результат'); open.type = 'button';
